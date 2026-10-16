@@ -1,6 +1,7 @@
 # Build the multi-arch image (linux/amd64, linux/arm64) on tag v* (or by hand) and push it to
 # ghcr.io/rojosinalma/cryer as <version>, <major>.<minor>, latest and sha-<short>.
 name: release
+run-name: ${{ github.ref_name }} · ${{ github.event.head_commit.message || github.event.release.name || github.actor }}
 
 on:
   push:
@@ -46,7 +47,7 @@ jobs:
             type=sha,prefix=sha-
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.licenses=AGPL-3.0-only
 
       - uses: docker/build-push-action@v6
         with:

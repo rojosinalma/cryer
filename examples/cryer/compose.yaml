@@ -12,7 +12,7 @@
 name: cryer
 services:
   cryer:
-    image: ghcr.io/rojosinalma/cryer:0.4.0
+    image: ghcr.io/rojosinalma/cryer:0.4.1
     container_name: cryer
     restart: unless-stopped
     ports:

@@ -6,7 +6,7 @@
 # Development with a bind mount and bun --watch: compose.dev.yaml (CONTRIBUTING.md).
 services:
   cryer:
-    image: ghcr.io/rojosinalma/cryer:0.4.0
+    image: ghcr.io/rojosinalma/cryer:0.4.1
     # build: .            # opt-in: build the image from this checkout instead of pulling it
     container_name: cryer
     restart: unless-stopped

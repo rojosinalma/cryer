@@ -62,6 +62,8 @@ what. Pin dependency versions in `package.json` and update `bun.lock` with them.
 
 - Plain, descriptive commit messages in the imperative ("Add reply matching for prefixes"), one logical
   change per commit. No attribution trailers.
+- Every commit and tag is GPG-signed (`git config commit.gpgsign true`, `git tag -s`); `main` is protected
+  and requires the `run-tests` check to pass.
 - A PR describes the behaviour change and how it was verified; `bin/verify` must be green.
 - A schema change is a new `src/db/migrations/NNNN_*.sql` plus the matching `src/db/schema.ts` edit — never
   an edit to an existing migration.
@@ -69,8 +71,10 @@ what. Pin dependency versions in `package.json` and update `bun.lock` with them.
 
 ## Documentation
 
-The README has exactly five sections (description, Requirements, Setup, License); everything else lives in
-`docs/`:
+The README has a fixed shape — badges, screenshot, description, Requirements, Installation, Usage,
+Development, License — and nothing else. Repository-level documents: `CONTRIBUTING.md` (this file),
+`SECURITY.md` (how to report a vulnerability), `CODE_OF_CONDUCT.md`, `CHANGELOG.md`. Everything else lives
+in `docs/`:
 
 | File | Content |
 |---|---|
@@ -91,7 +95,10 @@ A change in behaviour updates the matching doc in the same PR.
 1. Bump `version` in `package.json`, move the `[Unreleased]` entries in `CHANGELOG.md` under the new
    version with the date, write `docs/release-notes-<version>.md`, update the image tag in `compose.yaml`
    and `examples/cryer/compose.yaml`.
-2. Commit, then `git tag v<version> && git push && git push --tags`.
+2. Commit (signed), then `git tag -s v<version> -m v<version> && git push && git push --tags`.
 3. `.github/workflows/release.yml` builds `linux/amd64` and `linux/arm64` and pushes
    `ghcr.io/rojosinalma/cryer:<version>`, `:<major>.<minor>`, `:latest` and `:sha-<short>`.
-4. Create the GitHub release from the tag with the release notes.
+4. Create the GitHub release from the tag with the release notes (`gh release create v<version>
+   --title "cryer <version>" --notes-file docs/release-notes-<version>.md`).
+
+By contributing you agree that your contributions are licensed under the [AGPL-3.0](LICENSE).

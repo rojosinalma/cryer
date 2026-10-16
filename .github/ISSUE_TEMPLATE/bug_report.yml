@@ -1,0 +1,53 @@
+name: Bug report
+description: Something does not work as documented
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for the report. Remove the Discord token, the API token and channel ids from logs before pasting.
+  - type: input
+    id: version
+    attributes:
+      label: cryer version
+      description: From `GET /health` (`version`) or the image tag.
+      placeholder: 0.4.1 / ghcr.io/rojosinalma/cryer:latest
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: How do you run it?
+      options:
+        - Docker image (ghcr.io), single replica on bun:sqlite
+        - Docker image (ghcr.io), several replicas on rqlite
+        - Docker, built from source
+        - bun run dev
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, what you got.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. `bin/cryer ask "Deploy?" -o yes=Deploy -o no=Skip --wait 30`
+        2. Click **Skip** in Discord
+        3. …
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant `docker logs cryer` lines (JSON). Secrets redacted.
+      render: json
+  - type: input
+    id: client
+    attributes:
+      label: Client
+      placeholder: Discord desktop on Linux / bin/cryer / MCP client name

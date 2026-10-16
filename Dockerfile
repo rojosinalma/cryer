@@ -7,7 +7,7 @@ FROM oven/bun:1.4.3-slim
 LABEL org.opencontainers.image.title="cryer" \
       org.opencontainers.image.description="Discord notifications and decisions for your services: embeds, prompts with buttons, reactions and replies, over HTTP, MCP or a CLI" \
       org.opencontainers.image.source="https://github.com/rojosinalma/cryer" \
-      org.opencontainers.image.licenses="MIT"
+      org.opencontainers.image.licenses="AGPL-3.0-only"
 
 WORKDIR /app
 

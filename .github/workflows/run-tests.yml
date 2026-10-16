@@ -1,10 +1,10 @@
 # Typecheck, unit tests and a boot + /health probe (bin/verify) on every push and pull request.
 name: run-tests
+run-name: ${{ github.event.pull_request.title || github.event.head_commit.message }} · ${{ github.actor }}
 
 on:
   push:
-    branches: ["**"]
-    tags-ignore: ["v*"]
+    branches: [main]
   pull_request:
 
 permissions:

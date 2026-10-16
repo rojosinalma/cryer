@@ -3,7 +3,7 @@
 ## Image
 
 `ghcr.io/rojosinalma/cryer:<tag>` for `linux/amd64` and `linux/arm64`, built by
-`.github/workflows/release.yml` on every `v*` tag. Tags: `0.4.0`, `0.4`, `latest`, `sha-<short>`. The image
+`.github/workflows/release.yml` on every `v*` tag. Tags: `0.4.1`, `0.4`, `latest`, `sha-<short>`. The image
 runs as the unprivileged `bun` user, reads `/app/.env` and keeps a SQLite file in `/app/data` unless
 `RQLITE_URLS` is set. `docker build -t cryer .` builds it locally.
 
@@ -53,7 +53,7 @@ A two-replica deployment behind a reverse proxy looks like this:
                                │                               │
                                ▼                               ▼
                      node-a  /opt/cryer :7474         node-b  /opt/cryer :7474
-                     ghcr.io/rojosinalma/cryer:0.4.0  ghcr.io/rojosinalma/cryer:0.4.0
+                     ghcr.io/rojosinalma/cryer:0.4.1  ghcr.io/rojosinalma/cryer:0.4.1
                                │      RQLITE_URLS (client-side failover)      │
                                ▼                                              ▼
             node-a /opt/rqlite :4001/:4002 ◄──raft──► node-b /opt/rqlite ◄──raft──► node-c /opt/rqlite

@@ -8,6 +8,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Image tag
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-16
+
+### Changed
+
+- Licence: cryer is now released under the AGPL-3.0 (was MIT). `LICENSE`, `package.json` and the image's
+  `org.opencontainers.image.licenses` label say `AGPL-3.0-only`.
+- README restructured (requirements with minimum versions, installation, usage, development); `SECURITY.md`,
+  `CODE_OF_CONDUCT.md`, issue and pull request templates, Dependabot for Bun dependencies, GitHub Actions
+  and the base image.
+- The `run-tests` workflow runs on pull requests and pushes to `main` only; both workflows carry run names.
+
 ## [0.4.0] - 2026-10-16
 
 ### Changed
@@ -69,7 +80,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Image tag
 - `bin/cryer` CLI, `bin/verify`; Dockerfile and GitHub Actions (tests on every push, image releases to
   `ghcr.io/rojosinalma/cryer` on tags).
 
-[Unreleased]: https://github.com/rojosinalma/cryer/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/rojosinalma/cryer/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/rojosinalma/cryer/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/rojosinalma/cryer/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/rojosinalma/cryer/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/rojosinalma/cryer/compare/v0.1.0...v0.2.0
