@@ -1,21 +1,24 @@
-// HTTP interactions transport (v1): verify, then handle PING / button / modal submit.
+// HTTP interactions transport (v1): verify, then handle PING / slash command / button / modal submit.
 // Everything answered within Discord's 3 s deadline comes straight from here; slow work
 // (callbacks) is enqueued by answerPrompt.
 
 import { ActionRowBuilder, ModalBuilder, TextInputBuilder } from "@discordjs/builders";
 import {
+  ApplicationCommandType,
   ComponentType,
   InteractionResponseType,
   InteractionType,
   MessageFlags,
   TextInputStyle,
   type APIInteraction,
+  type APIChatInputApplicationCommandInteraction,
   type APIInteractionResponse,
   type APIMessageComponentInteraction,
   type APIModalSubmitInteraction,
   type APIUser,
 } from "discord-api-types/v10";
 import { verifyKey } from "discord-interactions";
+import { handleCommand } from "../commands/index.ts";
 import { env } from "../env.ts";
 import { logger } from "../log.ts";
 import { answeredField, answerLabel, answerPrompt, closedMessage, getPrompt, optionsOf, type AnswerOutcome } from "../prompts.ts";
@@ -105,14 +108,16 @@ export async function handleInteraction(i: APIInteraction): Promise<APIInteracti
     switch (i.type) {
       case InteractionType.Ping:
         return { type: InteractionResponseType.Pong };
+      case InteractionType.ApplicationCommand:
+        if (i.data.type !== ApplicationCommandType.ChatInput) break;
+        return await handleCommand(i as APIChatInputApplicationCommandInteraction);
       case InteractionType.MessageComponent:
         return await onComponent(i);
       case InteractionType.ModalSubmit:
         return await onModal(i);
-      default:
-        log.warn(`unsupported interaction type ${i.type}`);
-        return ephemeral("cryer does not handle this kind of interaction.");
     }
+    log.warn(`unsupported interaction type ${i.type}`);
+    return ephemeral("cryer does not handle this kind of interaction.");
   } catch (err) {
     log.error(`interaction ${i.id} failed`, err);
     return ephemeral(`cryer could not record that: ${err instanceof Error ? err.message : String(err)}`);

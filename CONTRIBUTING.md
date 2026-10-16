@@ -4,7 +4,7 @@
 
 ```sh
 bun install
-cp .env.example .env            # DISCORD_*, CRYER_API_TOKEN, DEFAULT_CHANNEL_ID at minimum
+cp .env.example .env            # DISCORD_*, CRYER_API_TOKEN at minimum (target via /cryer here or DEFAULT_CHANNEL_ID)
 bun run dev                     # bun --watch src/index.ts on http://127.0.0.1:7474, bun:sqlite in ./data
 ```
 

@@ -21,9 +21,11 @@ Features, configuration, API and operations are documented in [`docs/`](docs/).
 ## Requirements
 
 - Docker 24+ with Compose v2 (runs the published image), **or** [Bun](https://bun.sh) 1.4+ to run from source.
-- A Discord application with a bot token, invited to your server with *Send Messages*, *Embed Links*,
-  *Add Reactions* and *Read Message History*; the channel ids notifications should land in.
-- Optional: the **Message Content** privileged intent for reply answers (reactions and buttons work without it).
+- A Discord application with a bot token, either added to your server (*Send Messages*, *Embed Links*,
+  *Add Reactions*, *Read Message History*) or installed to your account — then cryer talks to you in a DM
+  (`dm:<user_id>` target) and needs no server at all.
+- Optional: the **Message Content** privileged intent for reply answers in server channels (reactions and
+  buttons work without it; replies in DMs always work).
 - Optional: an [rqlite](https://rqlite.io) 8+ cluster to run more than one replica.
 - Optional: a public HTTPS hostname that forwards `/interactions` to cryer, for buttons and modals.
 
@@ -31,21 +33,28 @@ Features, configuration, API and operations are documented in [`docs/`](docs/).
 
 1. Create the Discord application in the [Developer Portal](https://discord.com/developers/applications):
    New Application → **Bot** → Reset Token (→ `DISCORD_TOKEN`). General Information gives the
-   **Application ID** and **Public Key**. Invite the bot: OAuth2 → URL Generator → scope `bot` with the
-   permissions above, open the URL, pick your server. For reply answers turn on Bot → Privileged Gateway
-   Intents → **Message Content**.
+   **Application ID** and **Public Key**. Under **Installation** tick both installation contexts (**User
+   Install** with scope `applications.commands`; **Guild Install** with `applications.commands` + `bot` and
+   the permissions above), save, and open the install link it shows: **Add to my apps** for DMs, **Add to
+   server** for a channel. For reply answers in server channels turn on Bot → Privileged Gateway Intents →
+   **Message Content** (DMs need no intent).
 2. Run it:
 
    ```sh
    git clone https://github.com/rojosinalma/cryer && cd cryer
-   cp .env.example .env            # DISCORD_*, CRYER_API_TOKEN, DEFAULT_CHANNEL_ID at minimum
+   cp .env.example .env            # DISCORD_*, CRYER_API_TOKEN at minimum
    docker compose up -d            # ghcr.io/rojosinalma/cryer, 127.0.0.1:7474, data in a volume
    curl -s localhost:7474/health
    ```
 
-3. For buttons and modals, once cryer is reachable from the internet: General Information →
+   Then type `/cryer here` in the bot's DM or in the server channel notifications should land in; it sets
+   `default_channel` for you (`dm:<your id>` or the channel id). `DEFAULT_CHANNEL_ID` in `.env` remains
+   the hand-picked fallback — it accepts the same two forms.
+
+3. For buttons, modals and `/cryer here`, once cryer is reachable from the internet: General Information →
    **Interactions Endpoint URL** = `https://<public-host>/interactions`. Discord sends a signed PING on
-   save; cryer answers `{type:1}`. Expose **only** `/interactions` publicly — it is Ed25519-verified and
+   save; cryer answers `{type:1}`. Buttons and slash commands share that one path. Expose **only**
+   `/interactions` publicly — it is Ed25519-verified and
    needs no other gate. Keep the API, MCP, settings and ingest routes on your private network or behind an
    authenticating proxy.
 

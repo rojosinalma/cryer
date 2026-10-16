@@ -8,10 +8,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Image tag
 
 ## [Unreleased]
 
-## [0.4.2] - 2026-10-16
+## [0.5.0] - 2026-10-16
+
+### Added
+
+- User-installable app: a target is now a channel id **or `dm:<user_id>`** — in `default_channel`,
+  `route.<source>.<level>`, `route.<source>.*`, `DEFAULT_CHANNEL_ID`, the `channel` field of `POST /notify`,
+  `POST /prompts`, MCP `notify`/`ask` and the CLI's `-c`. cryer opens the DM once (`POST /users/@me/channels`)
+  and caches it in the new `dm_channels` table (migration `0003_dm.sql`). A DM Discord refuses (codes
+  50007/50278: app not installed and no mutual server, or DMs closed) is a 502 naming that reason.
+- Slash command `/cryer here`: in the bot's DM it sets `default_channel = dm:<your id>`, in a server channel
+  where cryer is installed to the server it sets that channel id, in a server where only the user installed
+  it it refuses with a hint. New settings `command_users` (comma-separated user ids allowed to run it, empty =
+  anyone who can invoke it) and `commands_register` (default `true`: boot compares the application's global
+  commands with cryer's set and bulk-overwrites only on a difference). Command interactions arrive on the
+  existing `/interactions` endpoint.
+- `/health.gateway.reply_parsing_dm`: reply matching in DMs, true whenever the websocket is up.
 
 ### Changed
 
+- Gateway intents also include `DirectMessages` and `DirectMessageReactions`; reply answers in DMs work
+  without the privileged Message Content intent (it gates guild messages only).
+- Installation: the Developer Portal's **Installation** page (User Install + Guild Install contexts, default
+  scopes) replaces the OAuth2 URL generator in the README; `/cryer here` replaces hand-picking
+  `DEFAULT_CHANNEL_ID`, which stays as the fallback.
+- Non-goal narrowed from "no slash commands" to "one configuration command, no general-bot features".
 - MCP server instructions trimmed to three lines (what cryer is, `notify` vs `ask`, `mode:"callback"`); the
   option shape, reaction/reply answers and the `via` field moved into the `ask` tool description. Clients
   inject the instructions into every conversation, so this cuts their per-turn cost by about two thirds.
@@ -88,8 +109,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Image tag
 - `bin/cryer` CLI, `bin/verify`; Dockerfile and GitHub Actions (tests on every push, image releases to
   `ghcr.io/rojosinalma/cryer` on tags).
 
-[Unreleased]: https://github.com/rojosinalma/cryer/compare/v0.4.2...HEAD
-[0.4.2]: https://github.com/rojosinalma/cryer/compare/v0.4.1...v0.4.2
+[Unreleased]: https://github.com/rojosinalma/cryer/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/rojosinalma/cryer/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/rojosinalma/cryer/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/rojosinalma/cryer/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/rojosinalma/cryer/compare/v0.2.0...v0.3.0

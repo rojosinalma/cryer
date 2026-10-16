@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { fakeDiscord, freshStore } from "./setup.ts";
+import { fakeDiscord, freshStore, signedRequest } from "./setup.ts";
 import type { APIInteraction } from "discord-api-types/v10";
+import { createApp } from "../src/app.ts";
+import { settings } from "../src/lib/settings.ts";
 import { createPrompt, getPrompt } from "../src/lib/prompts.ts";
 import { handleInteraction, modalValues } from "../src/lib/transports/interactions.ts";
 
@@ -96,5 +98,35 @@ describe("interaction handler", () => {
       },
     } as never;
     expect(modalValues(i)).toEqual({ a: "1", b: "2" });
+  });
+
+  test("signed /cryer here (type 2, BOT_DM) through POST /interactions sets default_channel", async () => {
+    await freshStore();
+    fakeDiscord();
+    const app = createApp();
+    const payload = {
+      ...base,
+      type: 2,
+      context: 1,
+      user,
+      channel_id: "dm1",
+      authorizing_integration_owners: { "1": user.id },
+      data: { id: "cmd", type: 1, name: "cryer", options: [{ type: 1, name: "here", options: [] }] },
+    };
+    const res = await app.fetch(await signedRequest("http://x/interactions", payload));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { type: number; data: { content: string; flags: number } };
+    expect(body.type).toBe(4);
+    expect(body.data.flags).toBe(64);
+    expect(body.data.content).toContain("`dm:42`");
+    expect(await settings.get("default_channel")).toBe("dm:42");
+  });
+
+  test("non-chat-input application command → 'does not handle' ephemeral", async () => {
+    await freshStore();
+    const i = { ...base, type: 2, context: 1, user, data: { id: "cmd", type: 2, name: "x", target_id: "1" } } as unknown as APIInteraction;
+    const res = (await handleInteraction(i)) as { type: number; data: { content: string } };
+    expect(res.type).toBe(4);
+    expect(res.data.content).toContain("does not handle");
   });
 });

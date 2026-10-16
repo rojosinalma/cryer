@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { TEST_CHANNEL, fakeDiscord, freshStore } from "./setup.ts";
+import { TEST_CHANNEL, authed, fakeDiscord, freshStore } from "./setup.ts";
+import { createApp } from "../src/app.ts";
 import { answerPrompt, cancelPrompt, createPrompt, getPrompt, notify, purge, sweepExpired, waitForAnswer } from "../src/lib/prompts.ts";
 import { settings } from "../src/lib/settings.ts";
 import { getDb } from "../src/lib/store.ts";
@@ -126,5 +127,52 @@ describe("purge", () => {
     const counts = await purge(30);
     expect(counts).toEqual({ messages: 0, prompts: 1, answers: 1 });
     expect(await getPrompt(r.id)).toBeUndefined();
+  });
+});
+
+describe("dm targets", () => {
+  test("notify with channel dm:<user> posts into the DM channel; the stored/returned channel_id is the DM channel", async () => {
+    await freshStore();
+    const d = fakeDiscord();
+    const r = await notify({ source: "s", type: "generic", level: "info", title: "hi", channel: "dm:123" });
+    expect(d.dms).toEqual(["123"]);
+    expect(r.channel_id).toBe("dm-123");
+    expect(d.posts[0]!.channelId).toBe("dm-123");
+    const second = await notify({ source: "s", type: "generic", level: "info", title: "again", channel: "dm:123" });
+    expect(second.channel_id).toBe("dm-123");
+    expect(d.dms).toEqual(["123"]);
+  });
+
+  test("createPrompt routed to a DM via default_channel stores the DM channel id", async () => {
+    await freshStore();
+    const d = fakeDiscord();
+    await settings.set("default_channel", "dm:42");
+    const r = await createPrompt({ title: "Deploy?", source: "agent", level: "info", options });
+    expect(r.channel_id).toBe("dm-42");
+    expect((await getPrompt(r.id))?.channelId).toBe("dm-42");
+    expect(d.posts[0]!.channelId).toBe("dm-42");
+  });
+
+  test("POST /notify accepts channel dm:<user>; a refused DM is a 502 with the reason", async () => {
+    await freshStore();
+    const d = fakeDiscord();
+    const app = createApp();
+    const body = (channel: string) => JSON.stringify({ source: "s", level: "info", title: "t", channel });
+    const ok = await app.fetch(authed("http://x/notify", { method: "POST", body: body("dm:123") }));
+    expect(ok.status).toBe(201);
+    expect(await ok.json()).toMatchObject({ ok: true, channel_id: "dm-123", message_id: "msg1" });
+
+    const bad = await app.fetch(authed("http://x/notify", { method: "POST", body: body("dm:abc") }));
+    expect(bad.status).toBe(400);
+
+    d.refuseDm = 50278;
+    const refused = await app.fetch(authed("http://x/notify", { method: "POST", body: body("dm:777") }));
+    expect(refused.status).toBe(502);
+    expect(await refused.json()).toMatchObject({
+      ok: false,
+      kind: "system",
+      message: expect.stringMatching(/refuses DMs to user 777 \(code 50278\)/),
+    });
+    expect(d.posts).toHaveLength(1);
   });
 });

@@ -2,6 +2,7 @@
 
 import { runMigrations } from "./db/migrate.ts";
 import { createApp } from "./app.ts";
+import { registerCommands } from "./lib/commands/register.ts";
 import { env, storeKind } from "./lib/env.ts";
 import { logger, setLevel } from "./lib/log.ts";
 import { sweepExpired } from "./lib/prompts.ts";
@@ -22,6 +23,8 @@ log.info(`cryer ${version} starting (store=${storeKind()})`);
 const store = getStore();
 await runMigrations(store);
 await settings.seed();
+// Slash commands (/cryer here): idempotent bulk overwrite when the live set differs; never blocks boot.
+registerCommands().catch((err) => log.warn(`command registration failed: ${err instanceof Error ? err.message : err}`));
 let maxQueue = await settings.getInt("max_queue");
 queue.setMax(() => maxQueue);
 watchLogLevel();

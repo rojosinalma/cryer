@@ -3,10 +3,11 @@
 ## Purpose
 
 cryer is the bridge between automated things (agents, scheduled jobs, services) and the humans who watch
-them in Discord. It posts notifications as embeds, asks questions as prompts with buttons, number reactions
-and reply matching, records exactly one answer per prompt and hands that answer back to the asker — through
-a long-poll, an `http` callback or an [opencode](https://opencode.ai) session. Everything that varies by
-site (channels, callback hosts, TTLs, URLs) is a runtime setting or an environment variable.
+them in Discord. It posts notifications as embeds — into a server channel or a user's DM — asks questions as
+prompts with buttons, number reactions and reply matching, records exactly one answer per prompt and hands
+that answer back to the asker — through a long-poll, an `http` callback or an
+[opencode](https://opencode.ai) session. Everything that varies by site (targets, callback hosts, TTLs,
+URLs) is a runtime setting or an environment variable.
 
 ## Architecture
 
@@ -17,6 +18,7 @@ Drizzle (`src/lib/store.ts`), and two answer transports.
  HTTP clients ─► /notify /prompts /settings /purge /mcp     (bearer)         src/routes/*, src/mcp.ts
  webhooks     ─► /ingest/:source                            (bearer|?token)  src/routes/ingest.ts → src/lib/ingest/*
  Discord      ─► /interactions                              (Ed25519)        src/routes/interactions.ts → src/lib/transports/interactions.ts
+                   buttons/modals → answerPrompt; slash commands → src/lib/commands/*
  Discord ws   ◄─► gateway client (lease holder only)                         src/lib/transports/gateway.ts
                         │ answerPrompt
                         ▼
@@ -24,7 +26,7 @@ Drizzle (`src/lib/store.ts`), and two answer transports.
                         │ enqueueCallbacks
                         ▼
               src/lib/queue.ts ──► src/lib/callbacks/{http,opencode-session}.ts
-              src/lib/discord.ts (REST: post/edit messages, add reactions)
+              src/lib/discord.ts (REST: post/edit messages, add reactions, open DMs, register commands)
 ```
 
 | Component | File(s) | Role |
@@ -34,12 +36,13 @@ Drizzle (`src/lib/store.ts`), and two answer transports.
 | Routes | `src/routes/*.ts` | Zod-validated handlers; orchestrate lib calls, never hold logic |
 | Prompt/notification logic | `src/lib/prompts.ts` | `notify`, `createPrompt`, `answerPrompt` (first writer wins), `waitForAnswer`, `cancelPrompt`, `sweepExpired`, `purge`, message edits |
 | Rendering | `src/lib/render/*` | embed per notification type (`generic` is the fallback), button rows, `custom_id` scheme `p:<prompt_id>:<idx>` |
-| Transports | `src/lib/transports/interactions.ts`, `gateway.ts` | buttons/modals (HTTP) and reactions/replies (websocket); both end in `answerPrompt` |
+| Transports | `src/lib/transports/interactions.ts`, `gateway.ts` | buttons/modals (HTTP) and reactions/replies (websocket, guild + DM intents); both end in `answerPrompt`; `interactions.ts` also dispatches `APPLICATION_COMMAND` to the commands registry |
+| Commands | `src/lib/commands/*` | slash commands that configure cryer itself: `index.ts` definitions + dispatcher (`<command> <subcommand>` → handler), `here.ts` (`/cryer here`), `register.ts` (boot: GET live set, diff, bulk PUT only when it differs) |
 | Lease | `src/lib/lease.ts` | conditional-upsert leader election on the `leases` table; `LeaseRunner` renews/polls |
 | Callbacks | `src/lib/callbacks/*` | `http` (allowlisted, 3 attempts, 10 s) and `opencode-session`; registered in `index.ts` |
 | Queue | `src/lib/queue.ts` | bounded in-process queue (concurrency 4, cap = `max_queue`) for callback delivery |
 | Ingest | `src/lib/ingest/*` | `apprise`, `dagu` payload → `NotifyInput` |
-| Settings | `src/lib/settings.ts` | typed defaults, 5 s cache capped at 500 keys, `resolveChannel` routing, log-level watcher |
+| Settings | `src/lib/settings.ts` | typed defaults, 5 s cache capped at 500 keys, `resolveChannel` routing, targets (`parseTarget`, `targetToChannel`, `dmChannelFor`), log-level watcher |
 | Discord REST | `src/lib/discord.ts` | `@discordjs/rest` wrapper, swappable for tests |
 | MCP | `src/mcp.ts` | `@modelcontextprotocol/sdk` server over `@hono/mcp`, tools `notify ask wait get cancel list` |
 | Store | `src/lib/store.ts`, `src/db/*` | one Drizzle `Db` type over `bun:sqlite` or rqlite's HTTP API; `execBatch` for transactions; `weak()` for relaxed reads |
@@ -57,6 +60,7 @@ between replicas are tolerated). I keep the schema additive — no drops, no ren
 | `prompts` | `message_id` (FK), `channel_id`, `discord_message_id`, `title`, `body`, `options_json`, `modal_json`, `ttl_s`, `status` (`pending|answered|expired|failed`), `callback_json`, `session_json`, `expires_at`, `answered_at` |
 | `answers` | `prompt_id` (FK), `choice_idx`, `choice_id`, `text`, `user_id`, `user_name`, `via` (`button|modal|reaction|reply`) |
 | `leases` | `name` (PK), `holder`, `expires_at` — leader election |
+| `dm_channels` | `user_id` (PK), `channel_id`, `created_at` — the DM channel Discord opened for a user, shared by every replica (`0003_dm.sql`) |
 
 Two drivers behind one interface: `bun:sqlite` (WAL, `DATA_DIR/cryer.db`) for a single replica,
 [rqlite](https://rqlite.io) over HTTP (`RQLITE_URLS`, client-side failover across the listed nodes) when
@@ -67,9 +71,17 @@ older than `purge_days`.
 
 ## Key flows
 
-**Notification.** `POST /notify` → validate → `resolveChannel(source, level, explicit channel)` →
-`rendererFor(type)` builds the embed → Discord REST `POST /channels/:id/messages` → `messages` row → `{id,
-channel_id, message_id, url}`. With `actions` the same request also creates a prompt.
+**Notification.** `POST /notify` → validate → `resolveChannel(source, level, explicit channel)` yields a
+*target* → `targetToChannel` → `rendererFor(type)` builds the embed → Discord REST `POST
+/channels/:id/messages` → `messages` row → `{id, channel_id, message_id, url}`. With `actions` the same
+request also creates a prompt.
+
+**Target resolution.** A target is a channel id or `dm:<user_id>` (`TARGET_RE`, validated at the API edge
+and in `parseTarget`). A channel id is used as is. For a DM target `dmChannelFor` looks in a small in-process
+map (200 entries), then the `dm_channels` table, then calls `POST /users/@me/channels` and stores the row —
+Discord hands out the same DM channel for a user forever, so the mapping never expires. Discord codes 50007
+and 50278 (DMs closed, app not installed and no mutual server) surface as a 502 with that reason instead of
+a generic Discord error.
 
 **Prompt.** `POST /prompts` (or MCP `ask`) → validate options (≤ 25, callbacks against
 `callback_allowlist`) → post the embed with button rows → `prompts` row (`pending`, `expires_at`) → add
@@ -95,18 +107,31 @@ still returns it.
 **Expiry.** Every 60 s each replica sweeps prompts past `expires_at`, marks them `expired` and closes the
 message (buttons removed, "⏱ expired"). `POST /prompts/:id/cancel` does the same on demand.
 
+**`/cryer here`.** Discord posts the command interaction to `/interactions` like a button click. The
+dispatcher checks `command_users` (empty = anyone who may invoke it; in a server the command's
+`default_member_permissions` is *Manage Server*), then decides the target purely from the interaction:
+context `BOT_DM` → `dm:<invoker id>`; context `GUILD` with the app installed to the server
+(`authorizing_integration_owners` has key `0`) → the channel id; a server where only the user installed the
+app → an ephemeral refusal (the bot could not post there). The result is `settings.set("default_channel",
+target)` and an ephemeral confirmation — the setting stays the contract, the command is sugar over it.
+Registration happens on boot: `registerCommands` reads the application's global commands, compares the
+managed fields (name, description, options, `integration_types`, `contexts`,
+`default_member_permissions`) and bulk-`PUT`s only on a difference; `commands_register=false` skips it.
+
 **Gateway lease.** On boot every replica tries `acquireLease("gateway", CRYER_NODE, ttl)` — a single
 `INSERT … ON CONFLICT DO UPDATE … WHERE expired OR own RETURNING`, so the store serialises contenders and one
 wins. The winner opens the discord.js client and renews every `gateway_lease_renew_s`; the others poll at
-the same rate and take over when the row expires or is released (SIGTERM releases it). Without the Message
-Content intent Discord closes the socket with 4014; the client reconnects without it and `/health` reports
-`reply_parsing: false`.
+the same rate and take over when the row expires or is released (SIGTERM releases it). Intents are the
+guild and DM message/reaction sets plus Message Content. Without the Message Content intent Discord closes
+the socket with 4014; the client reconnects without it and `/health` reports `reply_parsing: false` — guild
+replies then arrive empty and are ignored, while DM replies still parse (`reply_parsing_dm: true`), because
+Discord delivers DM content regardless of the privileged intent.
 
 ## Configuration surface
 
 Environment variables for boot-time values (secrets, store, port, node name, opencode server) and the
-`settings` table for runtime values (routing, TTLs, allowlist, queue cap, lease timing, `dagu_url`,
-`log_level`). Every key, default and meaning is in [configuration.md](configuration.md). Settings are read
+`settings` table for runtime values (routing targets, TTLs, allowlist, queue cap, lease timing, `dagu_url`,
+`log_level`, `command_users`, `commands_register`). Every key, default and meaning is in [configuration.md](configuration.md). Settings are read
 through a 5 s per-replica cache, so a `PUT /settings/:key` is live everywhere within seconds and nothing
 needs a restart.
 
@@ -132,15 +157,24 @@ needs a restart.
   by Bun's dotenv, so nothing shows in `docker inspect`.
 - **Additive migrations applied on boot.** A rolling upgrade never needs a maintenance window; the old
   and the new version read the same tables.
+- **Targets instead of channels.** One string (`<channel_id>` or `dm:<user_id>`) everywhere a destination
+  is named, so routing, the API, MCP and the CLI did not grow a second field; the DM channel lookup is the
+  only place that knows the difference. The cache table lives in the store so replicas never open a DM twice.
+- **A user-installable app.** Someone without a server of their own installs cryer to their account and
+  gets everything in a DM; the single slash command exists so they never have to look up an id. Commands
+  are registered by the app itself, idempotently, because an operator should not need a second tool.
 - **Extension points are one file each**: `src/lib/ingest/<source>.ts`, `src/lib/render/<type>.ts`,
-  `src/lib/callbacks/<kind>.ts`, `src/lib/transports/<name>.ts`, registered in their `index.ts`.
+  `src/lib/callbacks/<kind>.ts`, `src/lib/transports/<name>.ts`, `src/lib/commands/<command>.ts`,
+  registered in their `index.ts`.
 
 ## Current scope and non-goals
 
-Today cryer targets one Discord application and its server(s); channels are addressed by id. Answers are
-single-choice (one option, optionally with modal text); prompts live until answered, cancelled or expired.
-There is no user directory of its own — Discord identities (`user_id`, `user_name`) are recorded as seen.
-Ingest adapters exist for apprise and dagu; others are a file away. Authentication is one bearer token for
+Today cryer targets one Discord application, installed to servers and/or to user accounts; destinations are
+channel ids or `dm:<user_id>`. Answers are single-choice (one option, optionally with modal text); prompts
+live until answered, cancelled or expired. There is no user directory of its own — Discord identities
+(`user_id`, `user_name`) are recorded as seen. Slash commands are limited to configuring cryer (`/cryer
+here`); chat, moderation or any other general-bot feature is out of scope. Ingest adapters exist for
+apprise and dagu; others are a file away. Authentication is one bearer token for
 the API/MCP/ingest surface and Ed25519 for Discord; finer-grained tokens or per-source scopes are not part
 of the current scope.
 

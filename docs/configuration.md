@@ -20,7 +20,7 @@ nothing passes secrets through compose. `.env.example` lists every key.
 | `OPENCODE_URL` | opencode server for `opencode-session` callbacks; unset disables them | unset |
 | `OPENCODE_SERVER_USERNAME` | Basic-auth username for that server | `opencode` |
 | `OPENCODE_SERVER_PASSWORD` | Basic-auth password for that server | — |
-| `DEFAULT_CHANNEL_ID` | Fallback channel when the settings table is empty or unreachable | — |
+| `DEFAULT_CHANNEL_ID` | Fallback target (channel id or `dm:<user_id>`) when the settings table is empty or unreachable | — |
 | `LOG_LEVEL` | Bootstrap log level; the `log_level` setting overrides it at runtime | `info` |
 | `CRYER_NODE` | Replica name, used as the gateway lease holder | hostname |
 | `CRYER_VERSION` | Version reported by `/health` | `package.json` version |
@@ -33,9 +33,9 @@ Cached for 5 s per replica.
 
 | Key | Meaning | Default |
 |---|---|---|
-| `default_channel` | Channel id when no route matches | `""` → `DEFAULT_CHANNEL_ID` |
-| `route.<source>.<level>` | Channel id for one source and level | unset |
-| `route.<source>.*` | Channel id for every level of a source | unset |
+| `default_channel` | Target (channel id or `dm:<user_id>`) when no route matches; `/cryer here` sets it | `""` → `DEFAULT_CHANNEL_ID` |
+| `route.<source>.<level>` | Target for one source and level | unset |
+| `route.<source>.*` | Target for every level of a source | unset |
 | `prompt_ttl_s` | Default prompt lifetime | `3600` |
 | `purge_days` | Retention for messages, prompts and answers | `30` |
 | `log_level` | `debug\|info\|warn\|error` | `info` |
@@ -48,6 +48,26 @@ Cached for 5 s per replica.
 | `gateway_enabled` | Run the gateway listener (reaction + reply answers) on the lease holder | `true` |
 | `gateway_lease_ttl_s` | How long the `gateway` lease is valid without a renew | `30` |
 | `gateway_lease_renew_s` | Leader renew interval; followers poll at the same rate | `10` |
+| `command_users` | Comma-separated user ids allowed to run `/cryer here`; empty = anyone who can invoke it | `""` |
+| `commands_register` | Register the slash command set on boot (GET, diff, bulk PUT when it differs) | `true` |
+
+## Targets
+
+Everywhere a channel is named — `default_channel`, `route.*`, `DEFAULT_CHANNEL_ID`, the `channel` field of
+`POST /notify`, `POST /prompts`, MCP `notify`/`ask` and the CLI's `-c` — a **target** is one of two forms:
+
+| Form | Meaning |
+|---|---|
+| `123456789012345678` | A channel id; the bot must be in that server with the permissions from the README |
+| `dm:123456789012345678` | The DM with that user; the user must have installed the app (or share a server with the bot) |
+
+For a DM target cryer opens the DM once (`POST /users/@me/channels`) and keeps the channel id in the
+`dm_channels` table, so every replica reuses it. When Discord refuses the DM (the user has not installed the
+app and shares no server, or has DMs closed) the request fails with a 502 naming that reason. Anything that
+is neither a snowflake nor `dm:<snowflake>` is a 422.
+
+The easiest way to set `default_channel` is `/cryer here` in Discord ([features.md](features.md)): in the
+bot's DM it writes `dm:<your id>`, in a server channel the channel id.
 
 ## Routing
 
@@ -56,7 +76,7 @@ Routing order: explicit `channel` in the request → `route.<source>.<level>` �
 
 ```sh
 cryer settings route.backup.failure 123456789012345678   # failures of source "backup" go to one channel
-cryer settings route.agent.* 234567890123456789          # everything from source "agent" to another
+cryer settings route.agent.* dm:345678901234567890       # everything from source "agent" to your DM
 ```
 
 ## Private CA

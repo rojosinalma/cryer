@@ -3,7 +3,7 @@
 ## Image
 
 `ghcr.io/rojosinalma/cryer:<tag>` for `linux/amd64` and `linux/arm64`, built by
-`.github/workflows/release.yml` on every `v*` tag. Tags: `0.4.1`, `0.4`, `latest`, `sha-<short>`. The image
+`.github/workflows/release.yml` on every `v*` tag. Tags: `0.5.0`, `0.5`, `latest`, `sha-<short>`. The image
 runs as the unprivileged `bun` user, reads `/app/.env` and keeps a SQLite file in `/app/data` unless
 `RQLITE_URLS` is set. `docker build -t cryer .` builds it locally.
 
@@ -40,6 +40,11 @@ cryer replicas are stateless; state lives in the store. For more than one replic
    holder of the `gateway` row in `leases` renews it every `gateway_lease_renew_s`; the others poll at the
    same rate and take over when it is released (clean stop) or expires (`gateway_lease_ttl_s`). Nothing to
    configure; `GET /health` → `gateway.holder` shows who has it.
+5. **Slash command registration** — every replica compares the application's global commands with its own
+   set on boot and bulk-overwrites them only when they differ, so two replicas booting together issue at
+   most two identical `PUT`s (harmless). `cryer settings commands_register false` turns it off, for
+   example when another tool owns the application's commands. A failed registration is logged and never
+   blocks boot.
 
 A two-replica deployment behind a reverse proxy looks like this:
 
@@ -53,7 +58,7 @@ A two-replica deployment behind a reverse proxy looks like this:
                                │                               │
                                ▼                               ▼
                      node-a  /opt/cryer :7474         node-b  /opt/cryer :7474
-                     ghcr.io/rojosinalma/cryer:0.4.1  ghcr.io/rojosinalma/cryer:0.4.1
+                     ghcr.io/rojosinalma/cryer:0.5.0  ghcr.io/rojosinalma/cryer:0.5.0
                                │      RQLITE_URLS (client-side failover)      │
                                ▼                                              ▼
             node-a /opt/rqlite :4001/:4002 ◄──raft──► node-b /opt/rqlite ◄──raft──► node-c /opt/rqlite
@@ -71,7 +76,8 @@ with the previous tag; every released tag stays on ghcr.io.
 
 - **Public hostname**: forward `/interactions` only; answer 404 for every other path. The route is
   Ed25519-verified against `DISCORD_PUBLIC_KEY` and needs no other gate — Discord cannot pass an SSO or
-  access layer in front of it.
+  access layer in front of it. Button clicks, modal submits and the `/cryer here` command all arrive on
+  this one path; nothing else needs exposing for the command.
 - **Private hostname**: the full API, MCP, settings and ingest routes, protected by the bearer. Keep it on
   your private network or behind an authenticating proxy.
 - Private CA on callback or ingest targets: mount the PEM and set `NODE_EXTRA_CA_CERTS`
@@ -89,10 +95,12 @@ scheduler — a cron line with `bin/purge`, or the dagu DAG in `examples/dagu/cr
 
 | What | How |
 |---|---|
-| Health | `GET /health` — `ok`, `store`, `version`, `gateway:{enabled, leader, holder, connected, reply_parsing}`; 503 when the store does not answer |
+| Health | `GET /health` — `ok`, `store`, `version`, `gateway:{enabled, leader, holder, connected, reply_parsing, reply_parsing_dm}`; 503 when the store does not answer |
 | Logs | `docker logs -f cryer`; subsystems are prefixed (`[http]`, `[gateway]`, `[lease]`, `[store]`, `[queue]`, `[ingest:dagu]`…); `log_level` is a runtime setting |
 | Which replica holds the gateway | `curl -s https://cryer.example.internal/health \| jq .gateway` (`holder` is the lease holder; `leader` is true only when the answering replica is it) |
 | Turn reaction/reply answers off | `cryer settings gateway_enabled false` — the leader steps down within `gateway_lease_renew_s`; buttons are unaffected |
+| Point notifications somewhere else | `/cryer here` in the bot's DM or a server channel (sets `default_channel` to `dm:<id>` or the channel id), or `cryer settings default_channel <target>` |
+| Restrict who may run `/cryer here` | `cryer settings command_users <id>,<id>` (empty = anyone who can invoke it; in a server that is *Manage Server* by default) |
 | Store health (rqlite) | `curl -s http://<node>:4001/status`, `curl -s 'http://<node>:4001/nodes?ver=2'` |
 | rqlite shell | `docker run --rm -it rqlite/rqlite:10.5.3 rqlite -H <node>` |
 
@@ -118,4 +126,11 @@ scheduler — a cron line with `bin/purge`, or the dagu DAG in `examples/dagu/cr
   PING: check `DISCORD_PUBLIC_KEY`, and that `/interactions` reaches a replica (`curl -s
   https://cryer.example.com/interactions` → 401, not 404/502).
 - **Message Content intent off** — Discord closes the gateway with code 4014; cryer reconnects without the
-  intent and reports `gateway.reply_parsing: false` in `/health`. Reactions and buttons keep working.
+  intent and reports `gateway.reply_parsing: false` in `/health`. Reactions and buttons keep working, and so
+  do replies in DMs (`reply_parsing_dm` stays true — Discord delivers DM content without the intent).
+- **DM target refused** — `POST /notify`/`POST /prompts` to `dm:<user_id>` returns 502 "discord refuses DMs
+  to user … (code 50007/50278)": the user has not installed the app (and shares no server with the bot) or
+  has DMs from apps closed. Have them open the install link → **Add to my apps**, or route to a channel.
+- **`/cryer here` says cryer is not added to this server** — the app is installed to the invoking user only,
+  not to the server, so the bot cannot post there. Add it to the server (install link → **Add to server**)
+  or run the command in the bot's DM.

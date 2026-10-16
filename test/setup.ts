@@ -31,7 +31,8 @@ const privateKey = await crypto.subtle.importKey("jwk", TEST_PRIVATE_JWK, "Ed255
 const { runMigrations } = await import("../src/db/migrate.ts");
 const { openSqlite, setStore } = await import("../src/lib/store.ts");
 const { settings } = await import("../src/lib/settings.ts");
-const { setDiscordClient } = await import("../src/lib/discord.ts");
+const { setDiscordClient, DM_REFUSED_CODES } = await import("../src/lib/discord.ts");
+const { SystemError } = await import("../src/lib/errors.ts");
 type DiscordClient = import("../src/lib/discord.ts").DiscordClient;
 const { setLevel } = await import("../src/lib/log.ts");
 setLevel(process.env.LOG_LEVEL);
@@ -51,7 +52,11 @@ export interface FakeDiscord extends DiscordClient {
   posts: { channelId: string; payload: unknown }[];
   edits: { channelId: string; messageId: string; payload: unknown }[];
   reactions: { channelId: string; messageId: string; emoji: string }[];
+  /** createDm calls (user ids); the fake answers with DM channel `dm-<userId>`. */
+  dms: string[];
   failPost?: boolean;
+  /** When set, createDm throws this Discord error code (50007 / 50278) the way the REST client would. */
+  refuseDm?: number;
 }
 
 export function fakeDiscord(): FakeDiscord {
@@ -60,6 +65,7 @@ export function fakeDiscord(): FakeDiscord {
     posts: [],
     edits: [],
     reactions: [],
+    dms: [],
     async postMessage(channelId, payload) {
       if (fake.failPost) throw new Error("discord down");
       fake.posts.push({ channelId, payload });
@@ -74,6 +80,17 @@ export function fakeDiscord(): FakeDiscord {
     },
     async addReaction(channelId, messageId, emoji) {
       fake.reactions.push({ channelId, messageId, emoji });
+    },
+    async createDm(userId) {
+      fake.dms.push(userId);
+      if (fake.refuseDm) {
+        const why = DM_REFUSED_CODES[fake.refuseDm] ?? "refused";
+        throw new SystemError(`discord refuses DMs to user ${userId} (code ${fake.refuseDm}): ${why}`, 502, {
+          code: fake.refuseDm,
+          user_id: userId,
+        });
+      }
+      return { id: `dm-${userId}`, type: 1 } as never;
     },
   };
   setDiscordClient(fake);

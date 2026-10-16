@@ -1,11 +1,14 @@
 // Gateway transport (v0.3.0): a discord.js websocket client on exactly one replica (the holder of the
 // `gateway` lease) adding two answer paths for prompt messages — number reactions and replies. Both
 // end in answerPrompt like buttons do; the HTTP interactions transport keeps running on every replica.
-// Intents: Guilds, GuildMessages, GuildMessageReactions (+ MessageContent, a privileged toggle in the
-// Developer Portal). Without that toggle Discord closes the socket with 4014; the client reconnects
-// without it, reactions keep working and replies arrive with empty content (reply parsing off).
+// Intents: Guilds, GuildMessages, GuildMessageReactions, DirectMessages, DirectMessageReactions
+// (+ MessageContent, a privileged toggle in the Developer Portal). Without that toggle Discord closes the
+// socket with 4014; the client reconnects without it, reactions keep working and guild replies arrive with
+// empty content (reply parsing off). DMs (v0.5.0, user-installed app) are different: Discord delivers DM
+// content regardless of the privileged intent, so DM replies parse whenever the socket is up —
+// `Partials.Channel` is required for DM events (uncached channels) and stays set.
 
-import { GatewayCloseCodes } from "discord-api-types/v10";
+import { ChannelType, GatewayCloseCodes } from "discord-api-types/v10";
 import { Client, DiscordjsErrorCodes, Events, GatewayIntentBits, Options, Partials } from "discord.js";
 import { discord } from "../discord.ts";
 import { env } from "../env.ts";
@@ -17,7 +20,12 @@ import type { Option } from "../types.ts";
 
 const log = logger("gateway");
 
-export const BASE_INTENTS = GatewayIntentBits.Guilds | GatewayIntentBits.GuildMessages | GatewayIntentBits.GuildMessageReactions;
+export const BASE_INTENTS =
+  GatewayIntentBits.Guilds |
+  GatewayIntentBits.GuildMessages |
+  GatewayIntentBits.GuildMessageReactions |
+  GatewayIntentBits.DirectMessages |
+  GatewayIntentBits.DirectMessageReactions;
 export const CONTENT_INTENT = GatewayIntentBits.MessageContent;
 
 export const REACT_OK = "✅";
@@ -61,6 +69,8 @@ export interface ReactionEvent {
   channelId: string;
   emoji: string | null;
   user: { id: string; bot: boolean; name: string };
+  /** True when the message lives in a DM channel (no guild). */
+  isDm?: boolean;
 }
 
 export interface ReplyEvent {
@@ -70,6 +80,8 @@ export interface ReplyEvent {
   /** Message id this one replies to (message.reference), null when not a reply. */
   referenceId: string | null;
   author: { id: string; bot: boolean; name: string };
+  /** True when the message lives in a DM channel (no guild): content is delivered without the privileged intent. */
+  isDm?: boolean;
 }
 
 export type Handled =
@@ -114,7 +126,7 @@ export async function handleReaction(ev: ReactionEvent): Promise<Handled> {
   if (idx === undefined) return "ignored-emoji";
   const prompt = await promptByMessageId(ev.messageId);
   if (!prompt) return "not-prompt";
-  log.debug(`reaction ${ev.emoji} by ${ev.user.name} on prompt ${prompt.id} (${prompt.status})`);
+  log.debug(`reaction ${ev.emoji} by ${ev.user.name} on prompt ${prompt.id} (${prompt.status}${ev.isDm ? ", dm" : ""})`);
   if (prompt.status !== "pending") return "not-pending";
   const option = optionsOf(prompt)[idx];
   if (!option || option.modal) return "ignored-option";
@@ -126,20 +138,24 @@ export async function handleReaction(ev: ReactionEvent): Promise<Handled> {
 
 let warnedNoContent = false;
 
-/** messageCreate: a human reply to a pending prompt answers an option (matched) or free text (unmatched). */
+/**
+ * messageCreate: a human reply to a pending prompt answers an option (matched) or free text (unmatched).
+ * `contentEnabled` only gates guild messages — DM content is always delivered by Discord.
+ */
 export async function handleReply(ev: ReplyEvent, contentEnabled: boolean): Promise<Handled> {
   if (ev.author.bot) return "ignored-bot";
   if (!ev.referenceId) return "not-reply";
   const prompt = await promptByMessageId(ev.referenceId);
   if (!prompt) return "not-prompt";
-  log.debug(`reply by ${ev.author.name} to prompt ${prompt.id} (${prompt.status})`);
+  log.debug(`reply by ${ev.author.name} to prompt ${prompt.id} (${prompt.status}${ev.isDm ? ", dm" : ""})`);
   if (prompt.status !== "pending") {
     await react(ev.channelId, ev.id, REACT_LATE);
     return "not-pending";
   }
   const content = ev.content.trim();
-  if (!contentEnabled || !content) {
-    if (!warnedNoContent) {
+  const contentAvailable = contentEnabled || ev.isDm === true;
+  if (!contentAvailable || !content) {
+    if (!warnedNoContent && !contentAvailable) {
       warnedNoContent = true;
       log.warn(`reply to prompt ${prompt.id} ignored: message content unavailable (Message Content intent not granted?)`);
     }
@@ -160,12 +176,15 @@ export async function handleReply(ev: ReplyEvent, contentEnabled: boolean): Prom
 
 type DjsUser = { id: string; bot?: boolean | null; globalName?: string | null; username?: string | null } | null | undefined;
 const nameOf = (u: DjsUser) => u?.globalName || u?.username || "unknown";
+/** A message without a guild is a DM (also covers partial messages whose channel is a DM). */
+const isDmMessage = (message: any): boolean => (message?.guildId ?? message?.guild?.id ?? null) == null || message?.channel?.type === ChannelType.DM;
 
 const toReactionEvent = (reaction: any, user: any): ReactionEvent => ({
   messageId: String(reaction.message.id),
   channelId: String(reaction.message.channelId),
   emoji: reaction.emoji?.name ?? null,
   user: { id: String(user.id), bot: Boolean(user.bot), name: nameOf(user) },
+  isDm: isDmMessage(reaction.message),
 });
 
 const toReplyEvent = (message: any): ReplyEvent => ({
@@ -174,6 +193,7 @@ const toReplyEvent = (message: any): ReplyEvent => ({
   content: String(message.content ?? ""),
   referenceId: message.reference?.messageId ? String(message.reference.messageId) : null,
   author: { id: String(message.author?.id ?? "0"), bot: Boolean(message.author?.bot), name: nameOf(message.author) },
+  isDm: isDmMessage(message),
 });
 
 // ---------- the transport ----------
@@ -232,9 +252,13 @@ export class Gateway {
   get isConnected() {
     return this.connected;
   }
-  /** False while running without the MessageContent intent (replies arrive without text). */
+  /** False while running without the MessageContent intent (guild replies arrive without text). */
   get replyParsing() {
     return this.connected && this.contentEnabled;
+  }
+  /** DM replies carry content regardless of the privileged intent: parse whenever the socket is up. */
+  get replyParsingDm() {
+    return this.connected;
   }
   get holder() {
     return this.runner.holder;
@@ -363,6 +387,8 @@ export interface GatewayHealth {
   holder: string | null;
   connected: boolean;
   reply_parsing: boolean;
+  /** Reply parsing for DMs (v0.5.0): true whenever the websocket is up. */
+  reply_parsing_dm: boolean;
 }
 
 /** For /health: never throws (the gateway is a capability, not liveness). */
@@ -382,5 +408,6 @@ export async function gatewayHealth(): Promise<GatewayHealth> {
     holder,
     connected: current?.isConnected ?? false,
     reply_parsing: current?.replyParsing ?? false,
+    reply_parsing_dm: current?.replyParsingDm ?? false,
   };
 }

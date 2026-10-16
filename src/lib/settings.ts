@@ -1,10 +1,13 @@
 // Runtime configuration from the `settings` table, with a short in-process cache (bounded).
 
 import { eq } from "drizzle-orm";
-import { settings as table } from "../db/schema.ts";
+import { dmChannels, settings as table } from "../db/schema.ts";
+import { discord } from "./discord.ts";
 import { env } from "./env.ts";
+import { ValidationError } from "./errors.ts";
 import { logger, setLevel } from "./log.ts";
 import { getDb, weak } from "./store.ts";
+import { TARGET_RE } from "./types.ts";
 
 const log = logger("settings");
 
@@ -25,6 +28,8 @@ export const DEFAULTS = {
   gateway_enabled: "true",
   gateway_lease_ttl_s: "30",
   gateway_lease_renew_s: "10",
+  command_users: "",
+  commands_register: "true",
 } as const;
 
 export type SettingKey = keyof typeof DEFAULTS;
@@ -106,6 +111,7 @@ export const settings = {
 
   clearCache() {
     cache.clear();
+    dmChannelByUser.clear();
   },
 };
 
@@ -116,6 +122,7 @@ export async function defaultChannel(): Promise<string> {
 
 /**
  * Routing: explicit channel > route.<source>.<level> > route.<source>.* > default_channel (> env).
+ * Returns the raw *target* (channel id or `dm:<user_id>`); `targetToChannel` turns it into a postable channel.
  * Pure helper over a lookup fn so it can be unit-tested without a store.
  */
 export async function resolveChannel(
@@ -131,6 +138,77 @@ export async function resolveChannel(
   }
   return (await lookup("default_channel")) || env.defaultChannelId;
 }
+
+// ---------- targets (channel id or dm:<user_id>) ----------
+
+export const DM_PREFIX = "dm:";
+export { TARGET_RE };
+
+export type Target = { kind: "channel"; channelId: string } | { kind: "dm"; userId: string };
+
+/** `dm:<user_id>` → the user id, anything else → undefined. */
+export const dmUserId = (target: string): string | undefined =>
+  target.startsWith(DM_PREFIX) ? target.slice(DM_PREFIX.length) : undefined;
+
+export const isDmTarget = (target: string): boolean => dmUserId(target) !== undefined;
+
+/** Build the `dm:<user_id>` target string (what `default_channel` / `route.*` hold for a DM). */
+export const dmTarget = (userId: string) => `${DM_PREFIX}${userId}`;
+
+/** Parse a target string; throws ValidationError 422 on anything that is neither a snowflake nor `dm:<snowflake>`. */
+export function parseTarget(target: string): Target {
+  if (!TARGET_RE.test(target)) {
+    throw new ValidationError(`invalid target "${target}": expected a channel id or dm:<user_id>`, 422, { target });
+  }
+  const userId = dmUserId(target);
+  return userId === undefined ? { kind: "channel", channelId: target } : { kind: "dm", userId };
+}
+
+const DM_CACHE_MAX = 200;
+const dmChannelByUser = new Map<string, string>();
+
+function rememberDm(userId: string, channelId: string) {
+  if (dmChannelByUser.size >= DM_CACHE_MAX) {
+    const oldest = dmChannelByUser.keys().next().value;
+    if (oldest !== undefined) dmChannelByUser.delete(oldest);
+  }
+  dmChannelByUser.delete(userId);
+  dmChannelByUser.set(userId, channelId);
+}
+
+/**
+ * DM channel id for a user: in-process cache → `dm_channels` table → `POST /users/@me/channels` (then stored).
+ * Discord returns the same DM channel for a user forever, so the mapping never needs invalidation.
+ */
+export async function dmChannelFor(userId: string): Promise<string> {
+  const hit = dmChannelByUser.get(userId);
+  if (hit) return hit;
+  const row = await weak(() =>
+    getDb().select({ channelId: dmChannels.channelId }).from(dmChannels).where(eq(dmChannels.userId, userId)).get(),
+  );
+  if (row) {
+    rememberDm(userId, row.channelId);
+    return row.channelId;
+  }
+  const ch = await discord().createDm(userId);
+  const now = new Date().toISOString();
+  await getDb()
+    .insert(dmChannels)
+    .values({ userId, channelId: ch.id, createdAt: now })
+    .onConflictDoUpdate({ target: dmChannels.userId, set: { channelId: ch.id } });
+  rememberDm(userId, ch.id);
+  log.info(`dm channel ${ch.id} opened for user ${userId}`);
+  return ch.id;
+}
+
+/** Postable channel id for a target: a channel id is itself, `dm:<user_id>` becomes the user's DM channel. */
+export async function targetToChannel(target: string): Promise<string> {
+  const t = parseTarget(target);
+  return t.kind === "channel" ? t.channelId : dmChannelFor(t.userId);
+}
+
+/** Tests: forget the in-process DM mapping (the table is the next layer). */
+export const clearDmCache = () => dmChannelByUser.clear();
 
 /** Re-apply log_level from the store on an interval. Returns the timer so callers can stop it. */
 export function watchLogLevel(intervalMs = 30_000) {

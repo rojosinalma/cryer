@@ -11,6 +11,8 @@
   `_meta["ai.opencode/sessionID"]` or passed as `session`.
 - A reply in Discord matching an option id/label picks it; any other reply is a free-text answer
   (`choice_id`/`choice_idx` `null`, `text` = the reply; `via` says how it arrived).
+- `notify` and `ask` take an optional `channel`: a channel id or `dm:<user_id>` to deliver to a user's DM
+  instead of the routed target ([configuration.md](configuration.md) → Targets).
 - `get`, `list` and `cancel` manage prompts.
 
 opencode config example:

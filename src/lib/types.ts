@@ -2,6 +2,9 @@
 
 import { z } from "zod";
 
+/** A target is a channel snowflake or `dm:<user snowflake>` (every `channel` field and routing setting). */
+export const TARGET_RE = /^(?:dm:)?\d+$/;
+
 export const LEVELS = ["info", "success", "warning", "failure"] as const;
 export type Level = (typeof LEVELS)[number];
 
@@ -81,7 +84,7 @@ export const notifySchema = z.object({
   title: z.string().min(1).max(256),
   body: z.string().max(4000).optional(),
   fields: z.array(fieldSchema).max(25).optional(),
-  channel: z.string().regex(/^\d+$/).optional(),
+  channel: z.string().regex(TARGET_RE).optional(),
   url: z.url().optional(),
   actions: optionsSchema.optional(),
   ttl_s: z.number().int().positive().optional(),
@@ -99,7 +102,7 @@ export const promptSchema = z.object({
   level: z.enum(LEVELS).default("info"),
   options: optionsSchema,
   ttl_s: z.number().int().positive().optional(),
-  channel: z.string().regex(/^\d+$/).optional(),
+  channel: z.string().regex(TARGET_RE).optional(),
   callback: callbackSchema.optional(),
   session: sessionSchema.optional(),
   mode: z.enum(["wait", "callback"]).optional(),

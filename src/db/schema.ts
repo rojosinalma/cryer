@@ -72,6 +72,13 @@ export const leases = sqliteTable("leases", {
   expiresAt: text("expires_at").notNull(),
 });
 
+// DM targets (v0.5.0): the DM channel Discord opened for a user, so `dm:<user_id>` costs one REST call per user.
+export const dmChannels = sqliteTable("dm_channels", {
+  userId: text("user_id").primaryKey(),
+  channelId: text("channel_id").notNull(),
+  createdAt: text("created_at").notNull(),
+});
+
 export const migrations = sqliteTable("migrations", {
   name: text("name").primaryKey(),
   appliedAt: text("applied_at").notNull(),

@@ -10,7 +10,7 @@ import { ValidationError } from "./lib/errors.ts";
 import { logger } from "./lib/log.ts";
 import { cancelPrompt, createPrompt, listPrompts, notify, promptView, requirePrompt, waitForAnswer } from "./lib/prompts.ts";
 import { settings } from "./lib/settings.ts";
-import { fieldSchema, LEVELS, optionsSchema, type PromptInput } from "./lib/types.ts";
+import { fieldSchema, LEVELS, optionsSchema, TARGET_RE, type PromptInput } from "./lib/types.ts";
 import { version } from "./version.ts";
 
 const log = logger("mcp");
@@ -47,7 +47,7 @@ export const notifyArgs = {
   title: z.string().min(1).max(256),
   body: z.string().max(4000).optional(),
   fields: z.array(fieldSchema).max(25).optional(),
-  channel: z.string().regex(/^\d+$/).optional().describe("Channel id override"),
+  channel: z.string().regex(TARGET_RE).optional().describe("Target override: channel id or dm:<user_id>"),
 };
 
 export const askArgs = {
@@ -55,7 +55,7 @@ export const askArgs = {
   body: z.string().max(4000).optional(),
   options: optionsSchema,
   ttl_s: z.number().int().positive().optional(),
-  channel: z.string().regex(/^\d+$/).optional(),
+  channel: z.string().regex(TARGET_RE).optional(),
   mode: z.enum(["wait", "callback"]).default("wait"),
   wait_s: z.number().int().min(0).optional().describe("Seconds to block in wait mode (capped by ask_wait_max_s)"),
   reactions: z.boolean().optional().describe("false: no number reactions on the message (reaction answers off)"),

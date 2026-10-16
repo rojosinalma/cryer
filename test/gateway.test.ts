@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { EventEmitter } from "node:events";
 import { TEST_CHANNEL, authed, fakeDiscord, freshStore } from "./setup.ts";
-import { GatewayCloseCodes } from "discord-api-types/v10";
+import { GatewayCloseCodes, GatewayIntentBits } from "discord-api-types/v10";
 import { createApp } from "../src/app.ts";
 import { queue } from "../src/lib/queue.ts";
 import { answerPrompt, createPrompt, getAnswer, getPrompt, NUMBER_EMOJI, notify, waitForAnswer } from "../src/lib/prompts.ts";
@@ -134,6 +134,14 @@ describe("reaction answers", () => {
     expect((await getPrompt(r.id))?.status).toBe("answered");
     const edit = d.edits.at(-1)!.payload as { embeds: { fields: { name: string; value: string }[] }[] };
     expect(edit.embeds[0]!.fields.at(-1)!.value).toContain("✅ Skip — alice via reaction at");
+  });
+
+  test("a number reaction in a DM answers too", async () => {
+    await freshStore();
+    fakeDiscord();
+    const r = await pendingPrompt();
+    expect(await handleReaction({ messageId: r.message_id, channelId: "dm-chan", emoji: "1️⃣", user: alice, isDm: true })).toBe("answered");
+    expect(await getAnswer(r.id)).toMatchObject({ choice_id: "yes", via: "reaction" });
   });
 
   test("variation-selector-less keycap matches too", async () => {
@@ -271,6 +279,24 @@ describe("reply answers", () => {
     expect(d.reactions).toEqual([{ channelId: TEST_CHANNEL, messageId: "late1", emoji: REACT_LATE }]);
   });
 
+  test("DM reply answers without the MessageContent intent; a guild reply still needs it", async () => {
+    await freshStore();
+    const d = fakeDiscord();
+    const r = await pendingPrompt();
+    d.reactions.length = 0;
+    expect(await handleReply({ ...reply(r.message_id, "no"), isDm: false }, false)).toBe("no-content");
+    expect((await getPrompt(r.id))?.status).toBe("pending");
+    expect(await handleReply({ ...reply(r.message_id, "no", alice, "dm1"), channelId: "dm-chan", isDm: true }, false)).toBe("answered");
+    expect(await getAnswer(r.id)).toMatchObject({ choice_id: "no", choice_idx: 1, text: "no", via: "reply", user_name: "alice" });
+    expect(d.reactions).toEqual([{ channelId: "dm-chan", messageId: "dm1", emoji: REACT_OK }]);
+
+    const r2 = await pendingPrompt();
+    expect(await handleReply({ ...reply(r2.message_id, "whatever you think", alice, "dm2"), isDm: true }, false)).toBe("answered-free-text");
+    expect(await getAnswer(r2.id)).toMatchObject({ choice_id: null, text: "whatever you think", via: "reply" });
+    const r3 = await pendingPrompt();
+    expect(await handleReply({ ...reply(r3.message_id, "", alice, "dm3"), isDm: true }, false)).toBe("no-content"); // empty stays empty
+  });
+
   test("race: a reply that loses to a click gets ⏱, not an error", async () => {
     await freshStore();
     const d = fakeDiscord();
@@ -329,9 +355,10 @@ describe("Gateway", () => {
 
     // Events flow through the fallback client: a reaction answers, a (content-less) reply does not.
     const r = await pendingPrompt();
-    f.made[1]!.emit("messageCreate", { id: "m1", channelId: TEST_CHANNEL, content: "", reference: { messageId: r.message_id }, author: { id: "42", bot: false, username: "alice" } });
+    f.made[1]!.emit("messageCreate", { id: "m1", channelId: TEST_CHANNEL, guildId: "g1", content: "", reference: { messageId: r.message_id }, author: { id: "42", bot: false, username: "alice" } });
     await new Promise((res) => setTimeout(res, 50));
     expect((await getPrompt(r.id))?.status).toBe("pending");
+    expect(g.replyParsingDm).toBe(true);
     f.made[1]!.emit("messageReactionAdd", { message: { id: r.message_id, channelId: TEST_CHANNEL }, emoji: { name: "1️⃣" } }, { id: "42", bot: false, globalName: "alice" });
     await until(() => d.edits.length > 0);
     expect(await getAnswer(r.id)).toMatchObject({ choice_id: "yes", via: "reaction", user_name: "alice" });
@@ -374,7 +401,7 @@ describe("Gateway", () => {
     const res = await createApp().fetch(new Request("http://x/health"));
     const body = (await res.json()) as { ok: boolean; gateway: Record<string, unknown> };
     expect(body.ok).toBe(true);
-    expect(body.gateway).toEqual({ enabled: true, leader: false, holder: null, connected: false, reply_parsing: false });
+    expect(body.gateway).toEqual({ enabled: true, leader: false, holder: null, connected: false, reply_parsing: false, reply_parsing_dm: false });
   });
 
   test("/health shows the current holder while the lease is live", async () => {
@@ -383,6 +410,23 @@ describe("Gateway", () => {
     const f = fakeFactory(true);
     const g = startGateway({ factory: f.factory, token: "t", holder: "node-a", config: cfg() });
     await until(() => g.isConnected);
-    expect(await gatewayHealth()).toEqual({ enabled: true, leader: true, holder: "node-a", connected: true, reply_parsing: true });
+    expect(await gatewayHealth()).toEqual({ enabled: true, leader: true, holder: "node-a", connected: true, reply_parsing: true, reply_parsing_dm: true });
+  });
+
+  test("intents include DMs; without MessageContent reply_parsing is off but reply_parsing_dm stays on", async () => {
+    expect(BASE_INTENTS & GatewayIntentBits.DirectMessages).toBe(GatewayIntentBits.DirectMessages);
+    expect(BASE_INTENTS & GatewayIntentBits.DirectMessageReactions).toBe(GatewayIntentBits.DirectMessageReactions);
+    await freshStore();
+    const d = fakeDiscord();
+    const f = fakeFactory(false);
+    const g = startGateway({ factory: f.factory, token: "t", holder: "node-a", config: cfg() });
+    await until(() => g.isConnected);
+    expect(await gatewayHealth()).toEqual({ enabled: true, leader: true, holder: "node-a", connected: true, reply_parsing: false, reply_parsing_dm: true });
+
+    // A DM reply through the fallback client (no guildId) answers even though the content intent is off.
+    const r = await pendingPrompt();
+    f.made[1]!.emit("messageCreate", { id: "dm1", channelId: "dm-chan", guildId: null, content: "Skip", reference: { messageId: r.message_id }, author: { id: "42", bot: false, username: "alice" } });
+    await until(() => d.edits.length > 0);
+    expect(await getAnswer(r.id)).toMatchObject({ choice_id: "no", text: "Skip", via: "reply" });
   });
 });

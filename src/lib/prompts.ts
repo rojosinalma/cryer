@@ -10,7 +10,7 @@ import { notFound, ValidationError } from "./errors.ts";
 import { logger } from "./log.ts";
 import { queue } from "./queue.ts";
 import { buildButtons, rendererFor, type RenderInput } from "./render/index.ts";
-import { resolveChannel, settings } from "./settings.ts";
+import { resolveChannel, settings, targetToChannel } from "./settings.ts";
 import { getDb } from "./store.ts";
 import type { AnswerVia, AnswerView, CallbackSpec, NotifyInput, Option, PromptInput, SessionSpec } from "./types.ts";
 
@@ -50,10 +50,16 @@ async function validateCallbacks(options: Option[], callback?: CallbackSpec) {
   for (const o of options) if (o.callback) await validateCallback(o.callback);
 }
 
+/** Route (explicit > route.* > default_channel) to a target, then to the channel id to post in (DM channels included). */
+async function resolveTargetChannel(source: string, level: string, explicit: string | undefined): Promise<string> {
+  const target = await resolveChannel(source, level, explicit);
+  if (!target) throw new ValidationError("no channel: pass `channel` or set default_channel / route.* settings", 422);
+  return targetToChannel(target);
+}
+
 /** Post a notification (optionally with action buttons, which makes it a prompt too). */
 export async function notify(input: NotifyInput): Promise<NotifyResult> {
-  const channelId = await resolveChannel(input.source, input.level, input.channel);
-  if (!channelId) throw new ValidationError("no channel: pass `channel` or set default_channel / route.* settings", 422);
+  const channelId = await resolveTargetChannel(input.source, input.level, input.channel);
   const createdAt = now();
   const render = renderInputOf(input, createdAt);
   const embed = rendererFor(input.type).embed(render);
@@ -111,8 +117,7 @@ export async function notify(input: NotifyInput): Promise<NotifyResult> {
 
 /** Create a prompt: embed + buttons, stored pending, returns the Discord message link. */
 export async function createPrompt(input: PromptInput): Promise<PromptResult> {
-  const channelId = await resolveChannel(input.source, input.level, input.channel);
-  if (!channelId) throw new ValidationError("no channel: pass `channel` or set default_channel / route.* settings", 422);
+  const channelId = await resolveTargetChannel(input.source, input.level, input.channel);
   await validateCallbacks(input.options, input.callback);
 
   const createdAt = now();

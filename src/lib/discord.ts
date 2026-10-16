@@ -23,12 +23,32 @@ export interface DiscordClient {
   getChannel(channelId: string): Promise<APIChannel>;
   /** React as the bot; `emoji` is the unicode emoji (or `name:id` for a custom one). */
   addReaction(channelId: string, messageId: string, emoji: string): Promise<void>;
+  /** Open (or fetch) the bot's DM channel with a user; Discord returns the same channel on every call. */
+  createDm(userId: string): Promise<APIChannel>;
 }
 
-let rest: REST | null = null;
-const getRest = () => (rest ??= new REST({ version: "10", timeout: 10_000 }).setToken(env.discordToken));
+/** Discord error codes that mean "this user cannot be DMed" (app not installed / no mutual server / DMs closed). */
+export const DM_REFUSED_CODES: Readonly<Record<number, string>> = Object.freeze({
+  50007: "the user has DMs from this app closed or shares no server with it",
+  50278: "the user has not installed the app and shares no server with it",
+});
 
-async function call<T>(method: string, path: string, fn: () => Promise<unknown>): Promise<T> {
+const dmRefusal = (err: DiscordAPIError, userId: string | undefined) => {
+  const why = userId !== undefined && typeof err.code === "number" ? DM_REFUSED_CODES[err.code] : undefined;
+  return why ? `discord refuses DMs to user ${userId} (code ${err.code}): ${why}` : undefined;
+};
+
+let rest: REST | null = null;
+/** Shared authenticated REST instance (other modules add their own endpoints on top of it via `call`). */
+export const getRest = () => (rest ??= new REST({ version: "10", timeout: 10_000 }).setToken(env.discordToken));
+
+/** Run one REST call with the standard `[discord] METHOD path -> outcome` log line; errors become SystemError 502. */
+export async function call<T>(
+  method: string,
+  path: string,
+  fn: () => Promise<unknown>,
+  opts: { dmUserId?: string } = {},
+): Promise<T> {
   try {
     const result = (await fn()) as T;
     log.info(`${method} ${path} -> ok`);
@@ -36,6 +56,8 @@ async function call<T>(method: string, path: string, fn: () => Promise<unknown>)
   } catch (err) {
     if (err instanceof DiscordAPIError) {
       log.warn(`${method} ${path} -> ${err.status} ${err.code} ${err.message}`);
+      const refused = dmRefusal(err, opts.dmUserId);
+      if (refused) throw new SystemError(refused, 502, { code: err.code, user_id: opts.dmUserId });
       throw new SystemError(`discord ${method} ${path}: ${err.status} ${err.message}`, 502);
     }
     if (err instanceof HTTPError) {
@@ -59,6 +81,10 @@ export const restClient: DiscordClient = {
     const path = Routes.channelMessageOwnReaction(channelId, messageId, encodeURIComponent(emoji));
     return call("PUT", path, () => getRest().put(path));
   },
+  createDm: (userId) =>
+    call("POST", Routes.userChannels(), () => getRest().post(Routes.userChannels(), { body: { recipient_id: userId } }), {
+      dmUserId: userId,
+    }),
 };
 
 let client: DiscordClient = restClient;

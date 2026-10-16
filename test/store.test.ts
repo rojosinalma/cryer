@@ -13,10 +13,10 @@ afterEach(() => {
 describe("migrations", () => {
   test("idempotent: second run applies nothing, duplicate insert is ignored", async () => {
     const s = openSqlite(":memory:");
-    expect(await runMigrations(s)).toEqual(["0001_init.sql", "0002_gateway.sql"]);
+    expect(await runMigrations(s)).toEqual(["0001_init.sql", "0002_gateway.sql", "0003_dm.sql"]);
     expect(await runMigrations(s)).toEqual([]);
     const names = await s.db.all<{ name: string }>(sql`SELECT name FROM migrations`);
-    expect(names).toHaveLength(2);
+    expect(names).toHaveLength(3);
   });
 
   test("a replica that lost the race on an ALTER TABLE treats the migration as applied", async () => {
