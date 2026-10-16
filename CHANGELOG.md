@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Image tag
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-10-16
+
+### Changed
+
+- MCP server instructions trimmed to three lines (what cryer is, `notify` vs `ask`, `mode:"callback"`); the
+  option shape, reaction/reply answers and the `via` field moved into the `ask` tool description. Clients
+  inject the instructions into every conversation, so this cuts their per-turn cost by about two thirds.
+
 ## [0.4.1] - 2026-10-16
 
 ### Changed
@@ -80,7 +88,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Image tag
 - `bin/cryer` CLI, `bin/verify`; Dockerfile and GitHub Actions (tests on every push, image releases to
   `ghcr.io/rojosinalma/cryer` on tags).
 
-[Unreleased]: https://github.com/rojosinalma/cryer/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/rojosinalma/cryer/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/rojosinalma/cryer/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/rojosinalma/cryer/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/rojosinalma/cryer/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/rojosinalma/cryer/compare/v0.2.0...v0.3.0
