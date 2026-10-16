@@ -27,14 +27,19 @@ export function callerSession(meta: Record<string, unknown> | undefined): string
   return undefined;
 }
 
-export const INSTRUCTIONS =
-  "cryer posts notifications to a Discord server and asks the user for decisions there. " +
-  "Use `notify` for a one-way message (level info|success|warning|failure). Use `ask` when the user must choose: " +
-  "give 1–25 options (id + label; add `modal` to an option to collect free text). mode=wait blocks up to wait_s " +
-  "and returns the answer, or {status:pending, id} — then call `wait` again. mode=callback returns at once and the " +
-  "answer is delivered into this session later. The user answers with a button, a number reaction (1️⃣..9️⃣) or by " +
-  "replying to the message: a reply matching an option id/label picks it, any other reply is a free-text answer " +
-  "(choice_id/choice_idx null, `text` = the reply; `via` says how it arrived). `get`, `list` and `cancel` manage prompts.";
+// Injected into every client session: keep it to these three lines, the detail lives in the tool descriptions.
+export const INSTRUCTIONS = [
+  "cryer posts to Discord and asks the user for decisions there.",
+  "`notify` = one-way message; `ask` = the user picks an option (mode=wait blocks and returns the answer or {status:pending, id} → `wait`).",
+  "ask mode=callback returns at once and the answer is delivered into this session later.",
+].join("\n");
+
+export const ASK_DESCRIPTION =
+  "Ask the user to pick an option in Discord; wait for the answer or get it delivered later. " +
+  "Options: 1–25 of {id, label}; add `modal` to an option to collect free text. " +
+  "The user answers with a button, a number reaction (1️⃣..9️⃣) or by replying to the message: a reply matching an option " +
+  "id/label picks it, any other reply is a free-text answer (choice_id/choice_idx null, `text` = the reply); " +
+  "`via` says how it arrived (button|modal|reaction|reply).";
 
 export const notifyArgs = {
   source: z.string().min(1).max(64).default("agent").describe("Who sends it (used for routing)"),
@@ -107,7 +112,7 @@ export function buildServer(): McpServer {
 
   server.registerTool(
     "ask",
-    { description: "Ask the user to pick an option in Discord; wait for the answer or get it delivered later.", inputSchema: askArgs },
+    { description: ASK_DESCRIPTION, inputSchema: askArgs },
     async (args, extra) => {
       const sessionId = callerSession(extra._meta as Record<string, unknown> | undefined);
       log.info(`ask "${args.title}" mode=${args.mode} session=${sessionId ?? "-"}`);

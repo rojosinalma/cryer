@@ -1,9 +1,17 @@
 import { describe, expect, test } from "bun:test";
 import { authed, fakeDiscord, freshStore } from "./setup.ts";
 import { createApp } from "../src/app.ts";
-import { askArgsSchema, callerSession, notifyArgsSchema, runAsk } from "../src/mcp.ts";
+import { ASK_DESCRIPTION, INSTRUCTIONS, askArgsSchema, callerSession, notifyArgsSchema, runAsk } from "../src/mcp.ts";
 
 describe("MCP ask", () => {
+  test("server instructions stay within three lines; the option shape lives in the ask description", () => {
+    const lines = INSTRUCTIONS.split("\n");
+    expect(lines.length).toBeLessThanOrEqual(3);
+    expect(INSTRUCTIONS).toMatch(/notify/);
+    expect(INSTRUCTIONS).toMatch(/mode=callback/);
+    for (const term of ["1–25", "modal", "1️⃣..9️⃣", "replying", "choice_id", "via"]) expect(ASK_DESCRIPTION).toContain(term);
+  });
+
   test("arg validation: options 1..25, ids/labels required, mode enum", () => {
     expect(askArgsSchema.safeParse({ title: "t", options: [] }).success).toBe(false);
     expect(askArgsSchema.safeParse({ title: "t", options: [{ id: "a" }] }).success).toBe(false);
@@ -55,7 +63,28 @@ describe("MCP ask", () => {
       }),
     );
     expect(res.status).toBe(200);
-    const json = (await res.json()) as { result: { tools: { name: string }[] } };
+    const json = (await res.json()) as { result: { tools: { name: string; description?: string }[] } };
     expect(json.result.tools.map((t) => t.name).sort()).toEqual(["ask", "cancel", "get", "list", "notify", "wait"]);
+    expect(json.result.tools.find((t) => t.name === "ask")!.description).toBe(ASK_DESCRIPTION);
+  });
+
+  test("initialize hands the client the three-line instructions", async () => {
+    await freshStore();
+    const app = createApp();
+    const res = await app.fetch(
+      authed("http://x/mcp", {
+        method: "POST",
+        headers: { accept: "application/json, text/event-stream" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "initialize",
+          params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "t", version: "0" } },
+        }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { result: { instructions: string } };
+    expect(json.result.instructions).toBe(INSTRUCTIONS);
   });
 });

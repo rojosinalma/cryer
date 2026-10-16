@@ -20,5 +20,7 @@ opencode config example:
   "headers": { "Authorization": "Bearer {env:CRYER_API_TOKEN}" } } } }
 ```
 
-The server description cryer hands to the client (in `src/mcp.ts`) explains the same contract to the
-agent, so no extra prompt text is needed.
+The server instructions cryer hands to the client (`INSTRUCTIONS` in `src/mcp.ts`) are three short lines —
+what it is, `notify` vs `ask`, and that `mode:"callback"` lands the answer in the session later — because
+every client injects them into every conversation. The option shape and the answer paths above live in the
+`ask` tool's own description, so no extra prompt text is needed.
