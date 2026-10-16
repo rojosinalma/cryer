@@ -49,7 +49,8 @@ Features, configuration, API and operations are documented in [`docs/`](docs/).
 
    Then type `/cryer here` in the bot's DM or in the server channel notifications should land in; it sets
    `default_channel` for you (`dm:<your id>` or the channel id). `DEFAULT_CHANNEL_ID` in `.env` remains
-   the hand-picked fallback — it accepts the same two forms.
+   the hand-picked fallback — it accepts the same two forms. `/cryer status` shows the current target, the
+   `route.*` overrides and the gateway state; `/cryer forget` resets the target to that fallback.
 
 3. For buttons, modals and `/cryer here`, once cryer is reachable from the internet: General Information →
    **Interactions Endpoint URL** = `https://<public-host>/interactions`. Discord sends a signed PING on

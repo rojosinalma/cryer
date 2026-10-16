@@ -6,8 +6,10 @@
 2. **User-installable**: add cryer to your Discord account instead of a server and it delivers to your
    DM; the DM channel is opened once and cached in the store. Reply answers in DMs work without the
    privileged Message Content intent.
-3. **`/cryer here`**: one slash command, run in the bot's DM or in a server channel, sets `default_channel`
-   to that place (`dm:<your id>` or the channel id). Restricted with the `command_users` setting;
+3. **`/cryer here`, `/cryer status`, `/cryer forget`**: one slash command, run in the bot's DM or in a server
+   channel. `here` sets `default_channel` to that place (`dm:<your id>` or the channel id), `status` shows
+   the version, the current target, the `route.*` overrides and the gateway state (ephemeral), `forget`
+   resets the target to the `DEFAULT_CHANNEL_ID` fallback. Restricted with the `command_users` setting;
    registration on boot is idempotent and can be turned off with `commands_register`.
 4. **Prompts**: up to 25 options as buttons; an option may open a **modal** for free text.
 5. **Reactions and replies** as answers (1️⃣…9️⃣, or a reply matched to an option — unmatched text is a

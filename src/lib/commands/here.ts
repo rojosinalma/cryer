@@ -12,8 +12,8 @@ export const ephemeral = (content: string): APIInteractionResponse => ({
   data: { content, flags: MessageFlags.Ephemeral },
 });
 
-const userOf = (i: APIChatInputApplicationCommandInteraction): APIUser | undefined => i.member?.user ?? i.user;
-const nameOf = (u: APIUser | undefined) => u?.global_name || u?.username || "unknown";
+export const userOf = (i: APIChatInputApplicationCommandInteraction): APIUser | undefined => i.member?.user ?? i.user;
+export const nameOf = (u: APIUser | undefined) => u?.global_name || u?.username || "unknown";
 
 /** `command_users` ("" = anyone who can invoke) → is this user allowed to configure cryer? */
 export async function commandAllowed(userId: string | undefined): Promise<boolean> {

@@ -16,7 +16,7 @@ Responses are `{ok:true, message, …}` or `{ok:false, message, kind:"validation
 | `POST /ingest/:source[?token=]` | `apprise` or `dagu` payload ([ingest.md](ingest.md)) |
 | `GET/PUT /settings[/:key]` | Runtime settings ([configuration.md](configuration.md)) |
 | `POST /purge` | Delete rows older than `purge_days`; returns counts |
-| `POST /interactions` | Discord's endpoint (Ed25519-signed): buttons, modals and the `/cryer here` command |
+| `POST /interactions` | Discord's endpoint (Ed25519-signed): buttons, modals and the `/cryer` commands |
 | `POST /mcp` | MCP server, Streamable HTTP ([mcp.md](mcp.md)) |
 
 ## Targets

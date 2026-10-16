@@ -48,7 +48,7 @@ Cached for 5 s per replica.
 | `gateway_enabled` | Run the gateway listener (reaction + reply answers) on the lease holder | `true` |
 | `gateway_lease_ttl_s` | How long the `gateway` lease is valid without a renew | `30` |
 | `gateway_lease_renew_s` | Leader renew interval; followers poll at the same rate | `10` |
-| `command_users` | Comma-separated user ids allowed to run `/cryer here`; empty = anyone who can invoke it | `""` |
+| `command_users` | Comma-separated user ids allowed to run `/cryer here`, `/cryer status` and `/cryer forget`; empty = anyone who can invoke it | `""` |
 | `commands_register` | Register the slash command set on boot (GET, diff, bulk PUT when it differs) | `true` |
 
 ## Targets
@@ -67,7 +67,9 @@ app and shares no server, or has DMs closed) the request fails with a 502 naming
 is neither a snowflake nor `dm:<snowflake>` is a 422.
 
 The easiest way to set `default_channel` is `/cryer here` in Discord ([features.md](features.md)): in the
-bot's DM it writes `dm:<your id>`, in a server channel the channel id.
+bot's DM it writes `dm:<your id>`, in a server channel the channel id. `/cryer status` shows the current
+value (plus every `route.*` key and the gateway state) and `/cryer forget` resets it to `DEFAULT_CHANNEL_ID`
+(`""` when unset — notifications without a route then fail until `/cryer here` runs again).
 
 ## Routing
 

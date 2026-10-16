@@ -37,7 +37,7 @@ Drizzle (`src/lib/store.ts`), and two answer transports.
 | Prompt/notification logic | `src/lib/prompts.ts` | `notify`, `createPrompt`, `answerPrompt` (first writer wins), `waitForAnswer`, `cancelPrompt`, `sweepExpired`, `purge`, message edits |
 | Rendering | `src/lib/render/*` | embed per notification type (`generic` is the fallback), button rows, `custom_id` scheme `p:<prompt_id>:<idx>` |
 | Transports | `src/lib/transports/interactions.ts`, `gateway.ts` | buttons/modals (HTTP) and reactions/replies (websocket, guild + DM intents); both end in `answerPrompt`; `interactions.ts` also dispatches `APPLICATION_COMMAND` to the commands registry |
-| Commands | `src/lib/commands/*` | slash commands that configure cryer itself: `index.ts` definitions + dispatcher (`<command> <subcommand>` → handler), `here.ts` (`/cryer here`), `register.ts` (boot: GET live set, diff, bulk PUT only when it differs) |
+| Commands | `src/lib/commands/*` | slash commands that configure cryer itself: `index.ts` definitions + dispatcher (`<command> <subcommand>` → handler), `here.ts` (`/cryer here`), `status.ts` (`/cryer status`: version, default target, `route.*` keys, gateway health; read-only), `forget.ts` (`/cryer forget`: `default_channel` back to the env fallback), `register.ts` (boot: GET live set, diff, bulk PUT only when it differs) |
 | Lease | `src/lib/lease.ts` | conditional-upsert leader election on the `leases` table; `LeaseRunner` renews/polls |
 | Callbacks | `src/lib/callbacks/*` | `http` (allowlisted, 3 attempts, 10 s) and `opencode-session`; registered in `index.ts` |
 | Queue | `src/lib/queue.ts` | bounded in-process queue (concurrency 4, cap = `max_queue`) for callback delivery |
@@ -114,6 +114,11 @@ context `BOT_DM` → `dm:<invoker id>`; context `GUILD` with the app installed t
 (`authorizing_integration_owners` has key `0`) → the channel id; a server where only the user installed the
 app → an ephemeral refusal (the bot could not post there). The result is `settings.set("default_channel",
 target)` and an ephemeral confirmation — the setting stays the contract, the command is sugar over it.
+`/cryer status` (same `command_users` gate) answers ephemerally with the version, `default_channel` rendered
+for the invoker (`your DM`, `channel <#id>` or `unset`), the `route.*` rows (capped at 10 lines) and
+`gatewayHealth()` of the replica that received the interaction — two settings reads and a local lease read,
+far inside Discord's 3 s deadline. `/cryer forget` writes `env.defaultChannelId` (`DEFAULT_CHANNEL_ID`, `""`
+when unset) back into `default_channel`; `route.*` rows are untouched.
 Registration happens on boot: `registerCommands` reads the application's global commands, compares the
 managed fields (name, description, options, `integration_types`, `contexts`,
 `default_member_permissions`) and bulk-`PUT`s only on a difference; `commands_register=false` skips it.

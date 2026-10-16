@@ -13,7 +13,9 @@ import {
   type APIInteractionResponse,
   type RESTPostAPIChatInputApplicationCommandsJSONBody,
 } from "discord-api-types/v10";
+import { forget } from "./forget.ts";
 import { ephemeral, here } from "./here.ts";
+import { status } from "./status.ts";
 
 export type CommandHandler = (i: APIChatInputApplicationCommandInteraction) => Promise<APIInteractionResponse>;
 
@@ -23,7 +25,9 @@ export const cryerCommand = new SlashCommandBuilder()
   .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
   .setIntegrationTypes(ApplicationIntegrationType.GuildInstall, ApplicationIntegrationType.UserInstall)
   .setContexts(InteractionContextType.Guild, InteractionContextType.BotDM)
-  .addSubcommand((s) => s.setName("here").setDescription("Send cryer's notifications and prompts to this channel or DM"));
+  .addSubcommand((s) => s.setName("here").setDescription("Send cryer's notifications and prompts to this channel or DM"))
+  .addSubcommand((s) => s.setName("status").setDescription("Show where cryer posts and the gateway state"))
+  .addSubcommand((s) => s.setName("forget").setDescription("Reset the default target"));
 
 /** Every command cryer registers (bulk-overwritten at boot). */
 export const commandDefinitions: readonly RESTPostAPIChatInputApplicationCommandsJSONBody[] = Object.freeze([cryerCommand.toJSON()]);
@@ -31,6 +35,8 @@ export const commandDefinitions: readonly RESTPostAPIChatInputApplicationCommand
 /** `<command>` or `<command> <subcommand>` → handler. */
 const handlers: Readonly<Record<string, CommandHandler>> = Object.freeze({
   "cryer here": here,
+  "cryer status": status,
+  "cryer forget": forget,
 });
 
 /** Key of the handler table for an interaction: command name plus the first subcommand, if any. */

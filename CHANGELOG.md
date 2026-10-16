@@ -8,6 +8,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Image tag
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-16
+
+### Added
+
+- `/cryer status`: ephemeral summary of the cryer version, the current `default_channel` (your DM, a channel
+  mention or unset), every `route.*` setting (capped at 10 lines) and the gateway state (leader/holder,
+  connected, reply parsing, reply parsing in DMs) of the replica that answered. Same `command_users` gate as
+  `/cryer here`.
+- `/cryer forget`: resets `default_channel` to the `DEFAULT_CHANNEL_ID` fallback (`""` when unset), undoing
+  `/cryer here`; `route.*` settings are untouched. Both commands are registered on the next boot by the
+  existing diff-and-PUT registration.
+
+### Fixed
+
+- `bin/deploy`: the deployer start call now waits up to `DEPLOY_START_TIMEOUT_S` (180 s) for the synchronous
+  image pull instead of the generic 20 s HTTP timeout.
+
 ## [0.5.0] - 2026-10-16
 
 ### Added
@@ -109,7 +126,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Image tag
 - `bin/cryer` CLI, `bin/verify`; Dockerfile and GitHub Actions (tests on every push, image releases to
   `ghcr.io/rojosinalma/cryer` on tags).
 
-[Unreleased]: https://github.com/rojosinalma/cryer/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/rojosinalma/cryer/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/rojosinalma/cryer/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/rojosinalma/cryer/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/rojosinalma/cryer/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/rojosinalma/cryer/compare/v0.3.0...v0.4.0
