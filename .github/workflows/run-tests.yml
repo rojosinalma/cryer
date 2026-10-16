@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Same Bun as the image base (Dockerfile: oven/bun:1.4.3-slim).
       - uses: oven-sh/setup-bun@v2
