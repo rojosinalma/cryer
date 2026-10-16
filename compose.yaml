@@ -1,0 +1,24 @@
+# Run cryer from the published image: `cp .env.example .env`, fill it in, `docker compose up -d`.
+# Bun reads /app/.env itself (bind-mounted read-only) — no secrets pass through compose.
+# Single replica on bun:sqlite: the database lives in the `data` volume. Several replicas: set
+# RQLITE_URLS in .env and drop the volume (docs/deployment.md).
+# Private CA for https callback or ingest targets: see compose.override.yaml.example.
+# Development with a bind mount and bun --watch: compose.dev.yaml (CONTRIBUTING.md).
+services:
+  cryer:
+    image: ghcr.io/rojosinalma/cryer:0.4.0
+    # build: .            # opt-in: build the image from this checkout instead of pulling it
+    container_name: cryer
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:7474:7474"
+    volumes:
+      - type: bind
+        source: ./.env
+        target: /app/.env
+        read_only: true
+      - data:/app/data
+    mem_limit: 256m
+
+volumes:
+  data:

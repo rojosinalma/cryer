@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Delete messages/prompts/answers older than the purge_days setting (for a daily scheduled job).
+set -euo pipefail
+exec "$(dirname "$0")/cryer" purge

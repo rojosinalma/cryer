@@ -1,0 +1,26 @@
+# Daily purge of prompts/answers/messages older than the `purge_days` setting, as a dagu DAG.
+# Copy it into your dagu DAGs directory. The step runs curl inside the dagu container; CRYER_API_TOKEN
+# comes from a dotenv file mounted into dagu (0600). dotenv files are skipped silently when missing,
+# so the step refuses to run with an empty token instead of hammering the API with 401s.
+# Any other scheduler works the same way: POST /purge with the bearer once a day (or run `bin/purge`).
+description: Purge cryer prompts/answers past purge_days
+schedule: "40 4 * * *"
+max_active_runs: 1
+dotenv:
+  - /var/lib/dagu/cryer.env
+params:
+  - CRYER_URL: "https://cryer.example.internal"
+steps:
+  - id: purge
+    run: |
+      #!/bin/bash
+      set -u
+      if [[ -z "${CRYER_API_TOKEN:-}" ]]; then
+        echo "CRYER_API_TOKEN is empty: /var/lib/dagu/cryer.env missing or incomplete" >&2
+        exit 1
+      fi
+      curl -fsS --max-time 60 -X POST \
+        -H "Authorization: Bearer ${CRYER_API_TOKEN}" \
+        -H 'Content-Type: application/json' \
+        "${CRYER_URL}/purge"
+      echo

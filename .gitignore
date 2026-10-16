@@ -1,0 +1,9 @@
+.env
+.env.*
+!.env.example
+compose.override.yaml
+*.bak[0-9]
+data/
+node_modules/
+dist/
+drizzle/

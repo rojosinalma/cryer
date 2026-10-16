@@ -1,0 +1,50 @@
+# rqlite voter — one per store node (usually three). Copy this directory to each node (e.g. /opt/rqlite),
+# write ./.env (see .env.example; only RQLITE_NODE_ID and RQLITE_ADV_IP differ per node), `mkdir data &&
+# chown 1000 data` (the image's `rqlite` user), then `docker compose up -d` on every node.
+#
+# Host networking: Raft needs the node's real LAN address advertised to its peers, and with
+# network_mode: host the listeners and the advertised addresses are the same thing (no port mapping,
+# no bridge NAT in the Raft path). Ports: 4001 HTTP API, 4002 Raft.
+#
+# The image's docker-entrypoint.sh builds the listen/advertise flags from NODE_ID, HTTP_ADDR,
+# HTTP_ADV_ADDR, RAFT_ADDR, RAFT_ADV_ADDR and DATA_DIR, then appends `command:` (which must start
+# with a `-` flag) and the data dir. Flags (rqlite 10.x):
+#   -bootstrap-expect N          wait for N nodes, then elect a leader (idempotent once a cluster exists)
+#   -join host:port[,…]          RAFT addresses (port 4002) of all voters — not HTTP URLs
+#   -raft-cluster-remove-shutdown  a gracefully stopped node leaves the cluster — deliberately OFF,
+#                                so `compose down`/reboot keeps the seat and the node rejoins as itself.
+# All nodes run the exact same flags; only RQLITE_NODE_ID and RQLITE_ADV_IP differ (.env).
+#
+# Data: ./data, plain bind. About 30 MB per node for cryer's tables.
+name: rqlite
+services:
+  rqlite:
+    image: rqlite/rqlite:${RQLITE_TAG:-10.5.3}
+    container_name: rqlite
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      NODE_ID: ${RQLITE_NODE_ID:?node id, e.g. node-a}
+      HTTP_ADDR: 0.0.0.0:4001
+      HTTP_ADV_ADDR: ${RQLITE_ADV_IP:?this node's LAN ip}:4001
+      RAFT_ADDR: 0.0.0.0:4002
+      RAFT_ADV_ADDR: ${RQLITE_ADV_IP:?this node's LAN ip}:4002
+      DATA_DIR: /rqlite/file/data
+    command:
+      - -bootstrap-expect
+      - "${RQLITE_BOOTSTRAP_EXPECT:-3}"
+      - -join
+      - ${RQLITE_JOIN:?raft addresses of all voters, host:4002 comma-separated}
+    volumes:
+      - type: bind
+        source: ./data
+        target: /rqlite/file/data
+    mem_limit: 128m
+    memswap_limit: 128m
+    cpus: 0.5
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"

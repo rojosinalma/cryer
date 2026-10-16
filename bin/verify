@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# verify — install (frozen), typecheck, test, then probe /health. Exit 0 only when everything passes.
+#   CRYER_VERIFY_URL=https://cryer.example.internal   probe a deployed instance from a container instead
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+step() { echo; echo "==> $*"; }
+
+step "bun install --frozen-lockfile"
+bun install --frozen-lockfile
+
+step "tsc --noEmit"
+bunx tsc --noEmit
+
+step "bun test"
+bun test
+
+if [[ -n "${CRYER_VERIFY_URL:-}" ]]; then
+  step "health probe (from a container): $CRYER_VERIFY_URL/health"
+  docker run --rm curlimages/curl -fsSk "${CRYER_VERIFY_URL%/}/health"
+  echo
+else
+  step "health probe (local boot on sqlite)"
+  tmp=$(mktemp -d)
+  port=$(( 20000 + RANDOM % 20000 ))
+  env -u RQLITE_URLS PORT=$port DATA_DIR="$tmp" LOG_LEVEL=warn \
+    DISCORD_TOKEN=dummy DISCORD_APP_ID=000000000000000000 \
+    DISCORD_PUBLIC_KEY=0000000000000000000000000000000000000000000000000000000000000000 \
+    CRYER_API_TOKEN=dummy DEFAULT_CHANNEL_ID=0 \
+    bun run src/index.ts >"$tmp/app.log" 2>&1 &
+  pid=$!
+  trap 'kill $pid 2>/dev/null || true; rm -rf "$tmp"' EXIT
+  ok=""
+  for _ in $(seq 1 50); do
+    if out=$(curl -fsS "http://127.0.0.1:$port/health" 2>/dev/null); then ok=$out; break; fi
+    sleep 0.2
+  done
+  if [[ -z "$ok" ]]; then
+    echo "health probe failed; app log:"; cat "$tmp/app.log"; exit 1
+  fi
+  echo "$ok"
+  grep -q '"ok":true' <<<"$ok" || { echo "health returned not-ok"; exit 1; }
+fi
+
+echo
+echo "verify: OK"

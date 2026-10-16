@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# cryer — thin curl wrapper over the cryer HTTP API.
+#
+#   cryer notify [-l level] [-s source] [-c channel] "title" ["body"]
+#   cryer ask "title" -o id=label [-o id=label …] [--body text] [--ttl s] [--wait s] [-c channel]
+#   cryer wait <id> [timeout_s]
+#   cryer get <id>
+#   cryer list [status] [limit]
+#   cryer cancel <id>
+#   cryer settings [key [value]]
+#   cryer purge
+#
+# Env: CRYER_URL (default http://127.0.0.1:7474), CRYER_API_TOKEN. Both may also live in
+# ~/.config/cryer/env (KEY=VALUE lines). CRYER_INSECURE=1 skips TLS verification.
+set -euo pipefail
+
+CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/cryer/env"
+if [[ -f "$CONFIG" ]]; then
+  # shellcheck disable=SC1090
+  set -a; source "$CONFIG"; set +a
+fi
+CRYER_URL="${CRYER_URL:-http://127.0.0.1:7474}"
+CRYER_URL="${CRYER_URL%/}"
+
+die() { echo "cryer: $*" >&2; exit 1; }
+need_jq() { command -v jq >/dev/null || die "jq is required"; }
+
+usage() {
+  sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'
+  exit "${1:-0}"
+}
+
+api() {
+  local method=$1 path=$2 body=${3:-}
+  [[ -n "${CRYER_API_TOKEN:-}" ]] || die "CRYER_API_TOKEN not set (env or $CONFIG)"
+  local args=(-sS -X "$method" -H "authorization: Bearer $CRYER_API_TOKEN" -H "content-type: application/json" --max-time 330)
+  [[ -n "${CRYER_INSECURE:-}" ]] && args+=(-k)
+  [[ -n "$body" ]] && args+=(--data "$body")
+  local out code
+  out=$(curl "${args[@]}" -w $'\n%{http_code}' "$CRYER_URL$path") || die "cannot reach $CRYER_URL"
+  code=${out##*$'\n'}
+  out=${out%$'\n'*}
+  echo "$out"
+  [[ "$code" -lt 400 ]]
+}
+
+json_str() { jq -Rn --arg v "$1" '$v'; }
+
+cmd_notify() {
+  need_jq
+  local level=info source=cli channel="" title="" body=""
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+      -l|--level) level=$2; shift 2 ;;
+      -s|--source) source=$2; shift 2 ;;
+      -c|--channel) channel=$2; shift 2 ;;
+      -h|--help) usage ;;
+      *) if [[ -z "$title" ]]; then title=$1; else body=$1; fi; shift ;;
+    esac
+  done
+  [[ -n "$title" ]] || die "notify needs a title"
+  local payload
+  payload=$(jq -n --arg s "$source" --arg l "$level" --arg t "$title" --arg b "$body" --arg c "$channel" \
+    '{source:$s, level:$l, title:$t} + (if $b != "" then {body:$b} else {} end) + (if $c != "" then {channel:$c} else {} end)')
+  api POST /notify "$payload"
+}
+
+cmd_ask() {
+  need_jq
+  local title="" body="" ttl="" wait="" channel="" opts='[]'
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+      -o|--option)
+        [[ "$2" == *=* ]] || die "-o expects id=label"
+        opts=$(jq --arg id "${2%%=*}" --arg label "${2#*=}" '. + [{id:$id, label:$label}]' <<<"$opts"); shift 2 ;;
+      --body) body=$2; shift 2 ;;
+      --ttl) ttl=$2; shift 2 ;;
+      --wait) wait=$2; shift 2 ;;
+      -c|--channel) channel=$2; shift 2 ;;
+      -h|--help) usage ;;
+      *) title=$1; shift ;;
+    esac
+  done
+  [[ -n "$title" ]] || die "ask needs a title"
+  [[ "$opts" != "[]" ]] || die "ask needs at least one -o id=label"
+  local payload
+  payload=$(jq -n --arg t "$title" --arg b "$body" --arg ttl "$ttl" --arg c "$channel" --argjson o "$opts" \
+    '{title:$t, source:"cli", options:$o}
+     + (if $b != "" then {body:$b} else {} end)
+     + (if $ttl != "" then {ttl_s:($ttl|tonumber)} else {} end)
+     + (if $c != "" then {channel:$c} else {} end)')
+  local created id
+  created=$(api POST /prompts "$payload") || { echo "$created"; return 1; }
+  if [[ -z "$wait" ]]; then echo "$created"; return; fi
+  id=$(jq -r .id <<<"$created")
+  api GET "/prompts/$id/wait?timeout=$wait"
+}
+
+cmd_wait() { [[ $# -ge 1 ]] || usage 1; api GET "/prompts/$1/wait?timeout=${2:-300}"; }
+cmd_get() { [[ $# -ge 1 ]] || usage 1; api GET "/prompts/$1"; }
+cmd_cancel() { [[ $# -ge 1 ]] || usage 1; api POST "/prompts/$1/cancel"; }
+cmd_list() {
+  local q="limit=${2:-50}"
+  [[ -n "${1:-}" ]] && q="status=$1&$q"
+  api GET "/prompts?$q"
+}
+cmd_settings() {
+  case $# in
+    0) api GET /settings ;;
+    1) api GET "/settings/$1" ;;
+    *) need_jq; api PUT "/settings/$1" "$(jq -n --arg v "$2" '{value:$v}')" ;;
+  esac
+}
+cmd_purge() { api POST /purge; }
+
+[[ $# -ge 1 ]] || usage 1
+cmd=$1; shift
+case $cmd in
+  notify|ask|wait|get|list|cancel|settings|purge)
+    if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then usage; fi
+    "cmd_$cmd" "$@" ;;
+  -h|--help|help) usage ;;
+  *) die "unknown command: $cmd (try --help)" ;;
+esac

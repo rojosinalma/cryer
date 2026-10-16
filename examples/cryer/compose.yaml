@@ -1,0 +1,39 @@
+# One cryer replica. Copy this directory to the node (e.g. /opt/cryer), put the app's secrets in
+# ./.env (see .env.example), then `docker compose up -d`. Repeat per replica; every replica runs the
+# same file, only the node's ./.env differs (CRYER_NODE, if the hostnames are not distinct).
+#
+# ./.env is bind-mounted read-only at /app/.env and read by Bun's dotenv — no secrets in
+# `environment:`/`env_file:`, so nothing lands in `docker inspect`.
+#
+# Private CA for https callback or ingest targets: uncomment the ca.pem bind and NODE_EXTRA_CA_CERTS.
+#
+# Put the replicas behind your reverse proxy / load balancer with an active health check on GET /health;
+# expose only /interactions on the public hostname.
+name: cryer
+services:
+  cryer:
+    image: ghcr.io/rojosinalma/cryer:0.4.0
+    container_name: cryer
+    restart: unless-stopped
+    ports:
+      - "7474:7474"
+    # environment:
+    #   NODE_EXTRA_CA_CERTS: /app/ca.pem
+    volumes:
+      - type: bind
+        source: ./.env
+        target: /app/.env
+        read_only: true
+      # - type: bind
+      #   source: ./ca.pem
+      #   target: /app/ca.pem
+      #   read_only: true
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 1.0
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"

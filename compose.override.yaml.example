@@ -1,0 +1,11 @@
+# Local additions to compose.yaml — copy to compose.override.yaml (gitignored), docker compose merges it.
+# Example: trust a private CA for https callback or ingest targets.
+services:
+  cryer:
+    environment:
+      NODE_EXTRA_CA_CERTS: /app/ca.pem
+    volumes:
+      - type: bind
+        source: ./ca.pem
+        target: /app/ca.pem
+        read_only: true
