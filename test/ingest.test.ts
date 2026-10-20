@@ -23,6 +23,35 @@ describe("ingest registry", () => {
     expect(() => adapters.apprise!.parse({ title: "x", type: "loud" })).toThrow();
   });
 
+  test("apprise: http(s) url → embed url + Link field, id field kept", async () => {
+    const n = await adapters.apprise!.parse({ title: "Deploy", message: "done", type: "success", id: "r1", url: "https://deployer.example.internal/requests/7" });
+    expect(n.url).toBe("https://deployer.example.internal/requests/7");
+    expect(n.fields).toEqual([
+      { name: "id", value: "r1", inline: true },
+      { name: "Link", value: "https://deployer.example.internal/requests/7" },
+    ]);
+    const noId = await adapters.apprise!.parse({ title: "Deploy", message: "done", url: "http://deployer.example.internal/" });
+    expect(noId.url).toBe("http://deployer.example.internal/");
+    expect(noId.fields).toEqual([{ name: "Link", value: "http://deployer.example.internal/" }]);
+  });
+
+  test("apprise: no url → unchanged shape", async () => {
+    const n = await adapters.apprise!.parse({ title: "Disk", message: "95% full", type: "warning" });
+    expect(n.url).toBeUndefined();
+    expect(n.fields).toBeUndefined();
+    const withId = await adapters.apprise!.parse({ title: "Disk", message: "95% full", id: "abc" });
+    expect(withId.url).toBeUndefined();
+    expect(withId.fields).toEqual([{ name: "id", value: "abc", inline: true }]);
+  });
+
+  test("apprise: non-http or unparseable url is ignored, ingest still succeeds", async () => {
+    for (const url of ["ftp://files.example.internal/x", "deployer/requests/7", "javascript:alert(1)", "https://bad url", ""]) {
+      const n = await adapters.apprise!.parse({ title: "Disk", message: "95% full", id: "abc", url });
+      expect(n.url).toBeUndefined();
+      expect(n.fields).toEqual([{ name: "id", value: "abc", inline: true }]);
+    }
+  });
+
   test("dagu: lenient fallback, title from name, level from status, scalars become fields", async () => {
     await freshStore();
     const n = await adapters.dagu!.parse({ dag_name: "cryer-purge", status: "failed", duration: "3s", nested: { a: 1 }, message: "exit 1" });
@@ -47,6 +76,13 @@ describe("ingest registry", () => {
     const ok = await app.fetch(authed("http://x/ingest/apprise", { method: "POST", body: JSON.stringify({ title: "hi", message: "m", type: "success" }) }));
     expect(ok.status).toBe(201);
     expect(d.posts).toHaveLength(1);
+    const linked = await app.fetch(
+      authed("http://x/ingest/apprise", { method: "POST", body: JSON.stringify({ title: "hi", message: "m", url: "https://deployer.example.internal/requests/7" }) }),
+    );
+    expect(linked.status).toBe(201);
+    const embed = (d.posts[1]!.payload as { embeds: { url?: string; fields?: { name: string; value: string; inline?: boolean }[] }[] }).embeds[0]!;
+    expect(embed.url).toBe("https://deployer.example.internal/requests/7");
+    expect(embed.fields).toEqual([{ name: "Link", value: "https://deployer.example.internal/requests/7", inline: false }]);
     const bad = await app.fetch(authed("http://x/ingest/slack", { method: "POST", body: "{}" }));
     expect(bad.status).toBe(404);
     const j = (await bad.json()) as { kind: string; message: string };

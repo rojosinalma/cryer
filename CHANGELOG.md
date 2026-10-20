@@ -8,6 +8,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Image tag
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-10-20
+
+### Added
+
+- `POST /ingest/apprise` accepts an optional `url` next to apprise's own keys. An `http://`/`https://` value
+  becomes the embed's clickable title and a **Link** field (same as the dagu adapter's `link`); any other
+  value is ignored silently and the notification posts as before. Existing payloads are unchanged.
+
+### Changed
+
+- `isHttpUrl` moved from the dagu adapter to `src/lib/ingest/types.ts` and now also requires the value to
+  parse as a URL, so a malformed link can never fail an ingest.
+
 ## [0.5.1] - 2026-10-16
 
 ### Added
@@ -126,7 +139,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Image tag
 - `bin/cryer` CLI, `bin/verify`; Dockerfile and GitHub Actions (tests on every push, image releases to
   `ghcr.io/rojosinalma/cryer` on tags).
 
-[Unreleased]: https://github.com/rojosinalma/cryer/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/rojosinalma/cryer/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/rojosinalma/cryer/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/rojosinalma/cryer/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/rojosinalma/cryer/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/rojosinalma/cryer/compare/v0.4.0...v0.4.1

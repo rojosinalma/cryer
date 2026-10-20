@@ -24,7 +24,7 @@ import { z } from "zod";
 import { logger } from "../log.ts";
 import { settings } from "../settings.ts";
 import { notifySchema, type Field, type Level, type NotifyInput, type Option } from "../types.ts";
-import type { IngestAdapter } from "./types.ts";
+import { isHttpUrl, type IngestAdapter } from "./types.ts";
 
 const log = logger("ingest:dagu");
 
@@ -74,8 +74,6 @@ export function retryAction(base: string, dag: string, runId: string): Option {
     callback: { kind: "http", url: retryUrl(base, dag, runId), method: "POST", body: { dagRunId: runId } },
   };
 }
-
-const isHttpUrl = (v: string | undefined) => Boolean(v && /^https?:\/\//i.test(v));
 
 function fromV2(p: DaguV2, daguUrl: string): NotifyInput {
   const status = p.status.toLowerCase();

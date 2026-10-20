@@ -168,6 +168,12 @@ needs a restart.
 - **A user-installable app.** Someone without a server of their own installs cryer to their account and
   gets everything in a DM; the single slash command exists so they never have to look up an id. Commands
   are registered by the app itself, idempotently, because an operator should not need a second tool.
+- **apprise ingest carries an optional `url` (2026-10-20).** `POST /ingest/apprise` accepts `url` next to
+  apprise's own keys; an http(s) value becomes the embed's title link plus a `Link` field (the dagu
+  adapter's convention), anything else is dropped silently. Senders that already speak apprise JSON (the
+  deployer) get a clickable embed without a second ingest adapter; apprise itself never sets the key, so
+  real apprise payloads are unchanged. The URL check (`isHttpUrl`) lives in `src/lib/ingest/types.ts`,
+  shared by both adapters.
 - **Extension points are one file each**: `src/lib/ingest/<source>.ts`, `src/lib/render/<type>.ts`,
   `src/lib/callbacks/<kind>.ts`, `src/lib/transports/<name>.ts`, `src/lib/commands/<command>.ts`,
   registered in their `index.ts`.

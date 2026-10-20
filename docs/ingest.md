@@ -11,6 +11,16 @@ Use the `json://` notifier with the bearer header, e.g.
 `json://cryer.example.internal/ingest/apprise?+Authorization=Bearer%20<token>` (`jsons://` for TLS).
 apprise's `type` (`info|success|warning|failure`) becomes the level, `title`/`message` the embed.
 
+The body may also carry an optional `url` (not an apprise key; any sender posting apprise-style JSON — the
+author's deployer does — can set it). When it is an `http://` or `https://` URL the embed title links to it
+and a **Link** field shows it; anything else (another scheme, a relative path, an unparseable string) is
+ignored silently and the notification is posted as if `url` were absent. Existing payloads are unaffected.
+
+```json
+{"version": "1.0", "title": "Deploy finished", "message": "cryer 0.5.2 on turing-2", "type": "success",
+ "url": "https://deployer.example.internal/requests/7"}
+```
+
 ## dagu
 
 [dagu](https://github.com/dagu-org/dagu) posts run events straight to `POST /ingest/dagu` through a
