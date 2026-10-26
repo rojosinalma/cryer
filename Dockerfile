@@ -2,7 +2,7 @@
 # Immutable image; local development uses compose.dev.yaml with a bind mount instead.
 # Secrets never enter the image: the app loads /app/.env (bind-mount it read-only).
 # A private CA is not baked in either: mount the PEM at runtime and point NODE_EXTRA_CA_CERTS at it.
-FROM oven/bun:1.4.3-slim
+FROM oven/bun:1.4.4-slim
 
 LABEL org.opencontainers.image.title="cryer" \
       org.opencontainers.image.description="Discord notifications and decisions for your services: embeds, prompts with buttons, reactions and replies, over HTTP, MCP or a CLI" \
